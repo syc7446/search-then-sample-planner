@@ -1,4 +1,4 @@
-# tamp_plan_refine
+# Search-Then-Sample TAMP Planner
 
 ## Usage
 Install dependencies listed below and run `python main.py`. Expected output is that it should run 10 planning problems on the blocks environment and succeed on all. Each call to planning should take 3-10 seconds.

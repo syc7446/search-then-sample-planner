@@ -1,7 +1,7 @@
 """Constants used throughout the code.
 """
 
-USE_VIEWER = False
+USE_VIEWER = True
 
 PLANNER_TIMEOUT = 20
 if USE_VIEWER:
