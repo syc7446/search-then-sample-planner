@@ -1,5 +1,16 @@
 # Search-Then-Sample TAMP Planner
 
+## Installation
+To clone the repository, do:
+```
+git clone --recurse-submodules https://github.com/syc7446/search-then-sample-planner.git
+```
+
+To install python libraries, do:
+```
+pip install -r requirements.txt
+```
+
 ## Usage
 Install dependencies listed below and run `python main.py`. Expected output is that it should run 10 planning problems on the blocks environment and succeed on all. Each call to planning should take 3-10 seconds.
 
