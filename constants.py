@@ -21,3 +21,15 @@ BINS_BOX_S = 0.08  # side length
 BINS_SHELF_BOX_T = 0.5  # transparency (0-1)
 VEL_TOL = 0.02
 GRASPING_TOL = 5e-3
+
+BOXES_OBJ_HEIGHT = 0.5
+BOXES_OBJ_RADIUS = 0.
+
+# Planner-related parameters
+SAMPLER_NUM_TRIALS = 10
+RRT_Collision_Clearance = 0.5
+RRT_Extend_Granularity = 0.05
+BiRRT_Num_Attempts = 500
+BiRRT_Num_Iters = 50
+BiRRT_Smooth_Amt = 50
+DO_RENDER = True

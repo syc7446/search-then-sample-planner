@@ -12,6 +12,8 @@ def get_groundtruth_ndrs(env_name, env):
         return _gtndrs_blocks(env)
     if env_name == "bins":
         return _gtndrs_bins(env)
+    if env_name == "tampnamo":
+        return _gtndrs_tampnamo(env)
     raise Exception(f"Unrecognized env: {env_name}")
 
 
@@ -192,5 +194,32 @@ def _gtndrs_bins(env):
     place_ndrs.append(NDR(action, preconditions, effect_probs, effects))
 
     all_ndrs[action] = NDRSet(action, place_ndrs)
+
+    return all_ndrs
+
+
+def _gtndrs_tampnamo(env):
+    GoalClear = env.GoalClear
+    GoalReach = env.GoalReach
+    IsPose = env.IsPose
+    # Action predicates
+    ReachGoal = env.ReachGoal
+    ClearObject = env.ClearObject
+
+    all_ndrs = {}
+
+    action = ReachGoal()
+    preconditions = [GoalClear()]
+    effects = [{Anti(GoalClear()), GoalReach()}, {NOISE_OUTCOME}]
+    effect_probs = [1.0, 0.0]
+    all_ndrs[action] = NDRSet(action, [NDR(action, preconditions,
+                                           effect_probs, effects)])
+
+    action = ClearObject("?obj", "?posex", "?posey")
+    preconditions = [GoalClear(), IsPose("?posex", "?posey", "?obj")]
+    effects = [{GoalClear()}, {NOISE_OUTCOME}]
+    effect_probs = [1.0, 0.0]
+    all_ndrs[action] = NDRSet(action, [NDR(action, preconditions,
+                                           effect_probs, effects)])
 
     return all_ndrs

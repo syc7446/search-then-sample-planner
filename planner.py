@@ -11,6 +11,7 @@ from structs import Operator
 import planner_heuristics
 from env_base import EnvironmentFailure
 from utils import compute_static_preds, compute_delete_relax_reachable_lits
+import constants
 
 
 class Planner:
@@ -114,6 +115,7 @@ class Planner:
         assert len(skeleton) == len(constraints)
         cur_idx = 0
         num_tries = [0 for _ in skeleton]
+        num_trials_same_skel_act = 0
         idx_to_max_num_tries = [self._num_samples_per_step \
             if any(v.is_continuous for v in a.variables) \
             else 1 for a in skeleton]
@@ -122,11 +124,15 @@ class Planner:
         while cur_idx < len(skeleton):
             if time.time()-start_time > self._timeout:
                 raise PlanningTimeout("Timed out!")
+            # No hope to resample for the same skeleton action so we give up.
+            if num_trials_same_skel_act > constants.SAMPLER_NUM_TRIALS:
+                return None
             assert num_tries[cur_idx] < idx_to_max_num_tries[cur_idx]
             # Good debug point #2: if you have a skeleton that you think is
             # reasonable, but sampling isn't working, print num_tries here to
             # see at what step the backtracking search is getting stuck.
             num_tries[cur_idx] += 1
+            num_trials_same_skel_act += 1
             state = traj[cur_idx]
             skel_act = skeleton[cur_idx]
             constr_set = constraints[cur_idx]
@@ -146,6 +152,7 @@ class Planner:
             if lits == lits_sequence[cur_idx]:
                 if cur_idx == len(skeleton):  # success!
                     return plan
+                num_trials_same_skel_act = 0 # reset for the next skeleton action
                 continue  # all good, no need to backtrack
             # Do backtracking.
             cur_idx -= 1

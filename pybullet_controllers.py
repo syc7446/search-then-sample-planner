@@ -394,3 +394,8 @@ class BinsPlaceController(Controller):
     @staticmethod
     def _open_grippers(_1, _2, _3):
         return np.array([0., 0., 0., 1.]), True
+
+
+class TampnamoReachGoalController(Controller):
+    """Controller for placing an object in the bins environment.
+    """

@@ -63,3 +63,10 @@ def get_asset_path(asset_name):
     dir_path = os.path.dirname(os.path.realpath(__file__))
     asset_dir_path = os.path.join(dir_path, "assets")
     return os.path.join(asset_dir_path, asset_name)
+
+
+def lin_interp(in_low, in_high, out_low, out_high, in_val):
+    """Returns an out_val.
+    """
+    slope = (out_high-out_low)/(in_high-in_low)
+    return out_low+slope*(in_val-in_low)

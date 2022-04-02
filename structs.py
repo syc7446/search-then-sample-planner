@@ -3,6 +3,78 @@
 
 from pddlgym import structs as pddlgym_structs
 from pddlgym.parser import Operator as PDDLGymOperator
+import abc
+
+
+### Variables
+class Variable:
+    """Generic variable.
+    """
+    def __init__(self, name):
+        self.name = name
+        self._hash = hash(self.name)
+
+    def __hash__(self):
+        return self._hash
+
+    def __repr__(self):
+        return repr(self.name)
+
+    def __str__(self):
+        return str(self.name)
+
+    def __eq__(self, other):
+        return self.name == other.name
+
+    def __lt__(self, other):
+        return self.name < other.name
+
+    @abc.abstractmethod
+    def sample(self):
+        """Sample a random value.
+        """
+        raise NotImplementedError("Override me!")
+
+
+class DiscreteVariable(Variable):
+    """Represents a discrete variable. Each variable's name should be unique.
+    """
+    def __init__(self, name, size):
+        self.size = size
+        self.domain = list(range(size))
+        self.arbitrary_value = self.domain[0]
+        super().__init__(name)
+
+    def sample(self):
+        """Sample a random value.
+        """
+        raise NotImplementedError
+
+
+class StateVariableBase(Variable):
+    """Represents a state variable, which is a variable that has
+    predecessors and successors (e.g., on-road and next-on-road).
+    """
+    def __init__(self, name, size, _prev_ptr=None):
+        # Don't pass in a prev_ptr externally; it's only for internal use.
+        super().__init__(name, size)
+        if _prev_ptr is None:
+            self.next = self.__class__("next-"+name, size, _prev_ptr=self)
+            self.prev = None
+            self.is_next = False
+        else:
+            self.prev = _prev_ptr
+            self.next = None
+            self.is_next = True
+
+
+class StateVariable(StateVariableBase, DiscreteVariable):
+    """Representation of a discrete state variable.
+    """
+    pass
+
+
+LIMBO = StateVariable("limbo", 2)
 
 
 class Type(pddlgym_structs.Type):

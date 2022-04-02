@@ -4,13 +4,13 @@
 import time
 from blocks_env import BlocksEnvironment
 from bins_env import BinsEnvironment
+from tampnamo_env import TampnamoEnvironment
 import ground_truth_ndrs
 from planner import Planner, PlanningExhausted, PlanningTimeout
 import constants
 
 
-env_name = "blocks"
-# env_name = "bins"
+env_name = "tampnamo" # Options: blocks, bins, tampnamo
 
 if env_name == "blocks":
     num_samples_per_step = 1  # no backtracking required
@@ -18,6 +18,10 @@ if env_name == "blocks":
 if env_name == "bins":
     num_samples_per_step = 10
     env = BinsEnvironment(num_objs=3, seed=0)
+if env_name == "tampnamo":
+    num_samples_per_step = 10
+    env = TampnamoEnvironment(num_objs=1, seed=0)
+
 planner = Planner(seed=0, timeout=constants.PLANNER_TIMEOUT,
                   heuristic_name="PyperplanHAddHeuristic",
                   num_samples_per_step=num_samples_per_step)
