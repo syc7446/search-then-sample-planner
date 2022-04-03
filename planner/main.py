@@ -2,12 +2,12 @@
 """
 
 import time
-from blocks_env import BlocksEnvironment
-from bins_env import BinsEnvironment
-from tampnamo_env import TampnamoEnvironment
-import ground_truth_ndrs
-from planner import Planner, PlanningExhausted, PlanningTimeout
-import constants
+from examples.blocks_env import BlocksEnvironment
+from examples.bins_env import BinsEnvironment
+from examples.tampnamo_env import TampnamoEnvironment
+import utils.ground_truth_ndrs as ground_truth_ndrs
+from utils.planner import Planner, PlanningExhausted, PlanningTimeout
+import utils.constants as constants
 
 
 env_name = "tampnamo" # Options: blocks, bins, tampnamo

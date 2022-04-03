@@ -7,14 +7,14 @@ import itertools
 import time
 import numpy as np
 import pybullet as p
-from pybullet_utils import get_kinematic_chain, inverse_kinematics
-import pybullet_controllers as controllers
-import structs
-import constants
-from env_base import Environment, EnvironmentFailure
-from assets import p_constants
-from utils import WORLD, get_asset_path
-from solvers.rrt import MRBiRRT, BiRRT
+from planner.utils.pybullet_utils import get_kinematic_chain, inverse_kinematics
+import planner.utils.pybullet_controllers as controllers
+import planner.utils.structs as structs
+import planner.utils.constants as constants
+from planner.utils.env_base import Environment, EnvironmentFailure
+from planner.utils.assets import p_constants
+from planner.utils.utils import WORLD, get_asset_path
+from planner.solvers.rrt import MRBiRRT, BiRRT
 
 ENV_WIDTH = 6
 ENV_HEIGHT = 3
@@ -158,7 +158,7 @@ class TampnamoEnvironment(Environment):
         else:
             self._physics_client_id = p.connect(p.DIRECT)
         p.setGravity(0, 0, -10)
-        p.setAdditionalSearchPath("assets/tampnamo/")
+        p.setAdditionalSearchPath("planner/utils/assets/tampnamo/")
         p.loadURDF("plane.urdf")
         camera_distance = 6
         yaw = 45
@@ -173,22 +173,22 @@ class TampnamoEnvironment(Environment):
                                           [0, 0, 0, 1])
         # Make URDF files.
         wall_height = 3
-        with open("assets/tampnamo/side_wall_horiz.urdf", "w") as fil:
+        with open("planner/utils/assets/tampnamo/side_wall_horiz.urdf", "w") as fil:
             fil.write(p_constants.CUBE_URDF.format(
                 ENV_WIDTH, 0.01, wall_height, 0.5, 0.5, 0.5, 1))
-        with open("assets/tampnamo/side_wall_vert.urdf", "w") as fil:
+        with open("planner/utils/assets/tampnamo/side_wall_vert.urdf", "w") as fil:
             fil.write(p_constants.CUBE_URDF.format(
                 0.01, 3, wall_height, 0.5, 0.5, 0.5, 1))
-        with open("assets/tampnamo/inner_wall_horiz.urdf", "w") as fil:
+        with open("planner/utils/assets/tampnamo/inner_wall_horiz.urdf", "w") as fil:
             fil.write(p_constants.CUBE_URDF.format(
                 ENV_HEIGHT * (1 - DOOR_SCALE) / 2, 0.01, wall_height, 0.5, 0.5, 0.5, 1))
-        with open("assets/tampnamo/inner_wall_vert.urdf", "w") as fil:
+        with open("planner/utils/assets/tampnamo/inner_wall_vert.urdf", "w") as fil:
             fil.write(p_constants.CUBE_URDF.format(
                 0.01, 3 * (1 - DOOR_SCALE) / 2, wall_height, 0.5, 0.5, 0.5, 1))
-        with open("assets/tampnamo/blue_object.urdf", "w") as fil:
+        with open("planner/utils/assets/tampnamo/blue_object.urdf", "w") as fil:
             fil.write(p_constants.CUBE_URDF.format(
                 OBJ_SIZE, OBJ_SIZE, OBJ_HEIGHT, 0, 0, 1, 1))
-        with open("assets/tampnamo/red_object.urdf", "w") as fil:
+        with open("planner/utils/assets/tampnamo/red_object.urdf", "w") as fil:
             fil.write(p_constants.TARGET_URDF.format(
                 OBJ_SIZE, OBJ_SIZE, OBJ_HEIGHT, 1, 0, 0, 0.5))
         # Set up walls.

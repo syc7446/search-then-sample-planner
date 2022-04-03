@@ -11,7 +11,7 @@ from pyperplan.grounding import ground as pyperplan_ground
 from pyperplan.planner import HEURISTICS as PYPERPLAN_HEURISTICS
 from pyperplan.search import searchspace as pyperplan_searchspace
 from pddlgym.parser import PDDLDomain, PDDLProblemParser
-from structs import LiteralConjunction
+from planner.utils.structs import LiteralConjunction
 
 
 class Heuristic:

@@ -3,11 +3,11 @@
 
 import time
 import numpy as np
-from solvers import Solver
-from structs import LIMBO
-import constants
-from solvers.KDTree    import KDTree
-from solvers.utilities import gen_next, PathTree
+from planner.solvers.solver import Solver
+from planner.utils.structs import LIMBO
+import planner.utils.constants as constants
+from planner.solvers.KDTree import KDTree
+from planner.solvers.utilities import gen_next, PathTree
 
 class RRT(Solver):
     """Wrapper around BiRRT implementation that subclasses Solver.

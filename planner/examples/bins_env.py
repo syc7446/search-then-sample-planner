@@ -3,12 +3,12 @@
 
 import numpy as np
 import pybullet as p
-from pybullet_utils import get_kinematic_chain, inverse_kinematics
-import pybullet_controllers as controllers
-import structs
-import constants
-from env_base import Environment, EnvironmentFailure
-from utils import WORLD, get_asset_path
+from planner.utils.pybullet_utils import get_kinematic_chain, inverse_kinematics
+import planner.utils.pybullet_controllers as controllers
+import planner.utils.structs as structs
+import planner.utils.constants as constants
+from planner.utils.env_base import Environment, EnvironmentFailure
+from planner.utils.utils import WORLD, get_asset_path
 
 
 class BinsEnvironment(Environment):
