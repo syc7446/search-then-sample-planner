@@ -1,3 +1,6 @@
 [submodule "ndr"]
 	path = ndr
 	url = https://github.com/syc7446/ndr.git
+[submodule "pybullet_planning"]
+	path = pybullet_planning
+	url = https://github.com/syc7446/pybullet-planning.git
