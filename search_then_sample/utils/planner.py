@@ -7,11 +7,11 @@ import numpy as np
 from pddlgym.utils import get_object_combinations
 from pddlgym.structs import ground_literal, LiteralConjunction
 from ndr.ndrs import NOISE_OUTCOME
-from planner.utils.structs import Operator
-import planner.utils.planner_heuristics as planner_heuristics
-from planner.utils.env_base import EnvironmentFailure
-from planner.utils.utils import compute_static_preds, compute_delete_relax_reachable_lits
-import planner.utils.constants as constants
+from search_then_sample.utils.structs import Operator
+import search_then_sample.utils.planner_heuristics as planner_heuristics
+from search_then_sample.utils.env_base import EnvironmentFailure
+from search_then_sample.utils.utils import compute_static_preds, compute_delete_relax_reachable_lits
+import search_then_sample.utils.constants as constants
 
 
 class Planner:

@@ -3,8 +3,8 @@
 
 import abc
 import numpy as np
-from planner.utils.pybullet_utils import get_move_action
-import planner.utils.constants as constants
+from search_then_sample.legacy.utils.pybullet_utils import get_move_action
+import search_then_sample.legacy.utils.constants as constants
 
 ATOL = 1e-4
 

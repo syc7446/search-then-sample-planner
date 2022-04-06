@@ -7,14 +7,14 @@ import itertools
 import time
 import numpy as np
 import pybullet as p
-from planner.utils.pybullet_utils import get_kinematic_chain, inverse_kinematics
-import planner.utils.pybullet_controllers as controllers
-import planner.utils.structs as structs
-import planner.utils.constants as constants
-from planner.utils.env_base import Environment, EnvironmentFailure
-from planner.utils.assets import p_constants
-from planner.utils.utils import WORLD, get_asset_path
-from planner.solvers.rrt import MRBiRRT, BiRRT
+from search_then_sample.legacy.utils.pybullet_utils import get_kinematic_chain, inverse_kinematics
+import search_then_sample.legacy.utils.pybullet_controllers as controllers
+import search_then_sample.legacy.utils.structs as structs
+import search_then_sample.legacy.utils.constants as constants
+from search_then_sample.legacy.utils.env_base import Environment, EnvironmentFailure
+from search_then_sample.legacy.utils.assets import p_constants
+from search_then_sample.legacy.utils.utils import WORLD, get_asset_path
+from search_then_sample.legacy.solvers.rrt import MRBiRRT, BiRRT
 
 ENV_WIDTH = 6
 ENV_HEIGHT = 3
@@ -158,7 +158,7 @@ class TampnamoEnvironment(Environment):
         else:
             self._physics_client_id = p.connect(p.DIRECT)
         p.setGravity(0, 0, -10)
-        p.setAdditionalSearchPath("planner/utils/assets/tampnamo/")
+        p.setAdditionalSearchPath("search_then_sample/legacy/utils/assets/tampnamo/")
         p.loadURDF("plane.urdf")
         camera_distance = 6
         yaw = 45
@@ -173,22 +173,22 @@ class TampnamoEnvironment(Environment):
                                           [0, 0, 0, 1])
         # Make URDF files.
         wall_height = 3
-        with open("planner/utils/assets/tampnamo/side_wall_horiz.urdf", "w") as fil:
+        with open("search_then_sample/legacy/utils/assets/tampnamo/side_wall_horiz.urdf", "w") as fil:
             fil.write(p_constants.CUBE_URDF.format(
                 ENV_WIDTH, 0.01, wall_height, 0.5, 0.5, 0.5, 1))
-        with open("planner/utils/assets/tampnamo/side_wall_vert.urdf", "w") as fil:
+        with open("search_then_sample/legacy/utils/assets/tampnamo/side_wall_vert.urdf", "w") as fil:
             fil.write(p_constants.CUBE_URDF.format(
                 0.01, 3, wall_height, 0.5, 0.5, 0.5, 1))
-        with open("planner/utils/assets/tampnamo/inner_wall_horiz.urdf", "w") as fil:
+        with open("search_then_sample/legacy/utils/assets/tampnamo/inner_wall_horiz.urdf", "w") as fil:
             fil.write(p_constants.CUBE_URDF.format(
                 ENV_HEIGHT * (1 - DOOR_SCALE) / 2, 0.01, wall_height, 0.5, 0.5, 0.5, 1))
-        with open("planner/utils/assets/tampnamo/inner_wall_vert.urdf", "w") as fil:
+        with open("search_then_sample/legacy/utils/assets/tampnamo/inner_wall_vert.urdf", "w") as fil:
             fil.write(p_constants.CUBE_URDF.format(
                 0.01, 3 * (1 - DOOR_SCALE) / 2, wall_height, 0.5, 0.5, 0.5, 1))
-        with open("planner/utils/assets/tampnamo/blue_object.urdf", "w") as fil:
+        with open("search_then_sample/legacy/utils/assets/tampnamo/blue_object.urdf", "w") as fil:
             fil.write(p_constants.CUBE_URDF.format(
                 OBJ_SIZE, OBJ_SIZE, OBJ_HEIGHT, 0, 0, 1, 1))
-        with open("planner/utils/assets/tampnamo/red_object.urdf", "w") as fil:
+        with open("search_then_sample/legacy/utils/assets/tampnamo/red_object.urdf", "w") as fil:
             fil.write(p_constants.TARGET_URDF.format(
                 OBJ_SIZE, OBJ_SIZE, OBJ_HEIGHT, 1, 0, 0, 0.5))
         # Set up walls.
@@ -207,9 +207,9 @@ class TampnamoEnvironment(Environment):
             self._p_boxes.append(p.loadURDF("blue_object.urdf"))
         self._p_targets.append(p.loadURDF("red_object.urdf"))  # representing a goal
         self._p_held_obj_tf = None
-        for fil in glob.glob("assets/tampnamo/*wall*.urdf"):
+        for fil in glob.glob("search_then_sample/legacy/utils/assets/tampnamo/*wall*.urdf"):
             os.remove(fil)
-        for fil in glob.glob("assets/tampnamo/*object*.urdf"):
+        for fil in glob.glob("search_then_sample/legacy/utils/assets/tampnamo/*object*.urdf"):
             os.remove(fil)
         p_constants.set_ps([self._p_robot, self._p_walls, self._p_boxes])
 

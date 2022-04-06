@@ -2,7 +2,7 @@
 """
 
 import os
-from planner.utils.structs import Type
+from search_then_sample.legacy.utils.structs import Type
 
 # Global world object for environments
 WORLD = Type("world")("world")

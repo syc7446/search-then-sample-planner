@@ -2,15 +2,16 @@
 """
 
 import time
-from examples.blocks_env import BlocksEnvironment
-from examples.bins_env import BinsEnvironment
-from examples.tampnamo_env import TampnamoEnvironment
-import utils.ground_truth_ndrs as ground_truth_ndrs
-from utils.planner import Planner, PlanningExhausted, PlanningTimeout
-import utils.constants as constants
+from search_then_sample.legacy.examples.blocks_env import BlocksEnvironment
+from search_then_sample.legacy.examples.bins_env import BinsEnvironment
+from search_then_sample.legacy.examples.tampnamo_env import TampnamoEnvironment
+from search_then_sample.legacy.examples.pick_place_env import PickPlaceEnvironment
+import search_then_sample.legacy.utils.ground_truth_ndrs as ground_truth_ndrs
+from search_then_sample.legacy.utils.planner import Planner, PlanningExhausted, PlanningTimeout
+import search_then_sample.legacy.utils.constants as constants
 
 
-env_name = "tampnamo" # Options: blocks, bins, tampnamo
+env_name = "bins" # Options: blocks, bins, tampnamo
 
 if env_name == "blocks":
     num_samples_per_step = 1  # no backtracking required
