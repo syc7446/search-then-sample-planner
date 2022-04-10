@@ -87,7 +87,7 @@ class Planner:
                     print("success! expanded {} skeletons (sampled for {}), "
                           "found plan of length {}: {}".format(
                               num_expanded, num_sampling, len(plan), plan))
-                    return plan
+                    return plan, env.get_merged_path()
             else:
                 # Generate successors.
                 for child_node in self._get_successors(node):
@@ -155,6 +155,7 @@ class Planner:
                 num_trials_same_skel_act = 0 # reset for the next skeleton action
                 continue  # all good, no need to backtrack
             # Do backtracking.
+            env.merged_path.delete()
             cur_idx -= 1
             while num_tries[cur_idx] == idx_to_max_num_tries[cur_idx]:
                 num_tries[cur_idx] = 0

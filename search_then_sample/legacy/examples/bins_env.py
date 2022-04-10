@@ -325,7 +325,7 @@ class BinsEnvironment(Environment):
                 error_message = "Obj moving with velocity {}".format(
                     np.linalg.norm(linear_vels))
         # Before raising an error or returning, remove constraints
-        if held_constraint_id is not None:
+        if next_state[self._world]["cur_holding_tf"] is not None:
             # Remove this constraint, since this function should be stateless.
             p.removeConstraint(held_constraint_id,
                                physicsClientId=self._physics_client_id)

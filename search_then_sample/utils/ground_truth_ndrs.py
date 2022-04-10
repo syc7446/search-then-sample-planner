@@ -14,6 +14,8 @@ def get_groundtruth_ndrs(env_name, env):
         return _gtndrs_bins(env)
     if env_name == "tampnamo":
         return _gtndrs_tampnamo(env)
+    if env_name == "pickplace":
+        return _gtndrs_pickplace(env)
     raise Exception(f"Unrecognized env: {env_name}")
 
 
@@ -218,6 +220,57 @@ def _gtndrs_tampnamo(env):
     action = ClearObject("?obj", "?posex", "?posey")
     preconditions = [GoalClear(), IsPose("?posex", "?posey", "?obj")]
     effects = [{GoalClear()}, {NOISE_OUTCOME}]
+    effect_probs = [1.0, 0.0]
+    all_ndrs[action] = NDRSet(action, [NDR(action, preconditions,
+                                           effect_probs, effects)])
+
+    return all_ndrs
+
+
+def _gtndrs_pickplace(env):
+    OnTable = env.OnTable
+    OnTargetTable = env.OnTargetTable
+    Holding = env.Holding
+    HoldingSide = env.HoldingSide
+    HandEmpty = env.HandEmpty
+    HandFull = env.HandFull
+    InRoom0 = env.InRoom0
+    InRoom1 = env.InRoom1
+    IsValidPick = env.IsValidPick
+    IsValidMove = env.IsValidMove
+    IsValidPlace = env.IsValidPlace
+    # Action predicates
+    Pick = env.Pick
+    Place = env.Place
+    MoveToRoom1 = env.MoveToRoom1
+
+    all_ndrs = {}
+
+    action = Pick("?obj", "?basex", "?basey", "?basez", "?gripx", "?gripy", "?gripz")
+    preconditions = [OnTable("?obj"), HandEmpty(),
+                     IsValidPick("?basex", "?basey", "?basez",
+                                 "?gripx", "?gripy", "?gripz", "?obj")]
+    effects = [{Anti(OnTable("?obj")), Anti(HandEmpty()),
+                HandFull(), HoldingSide("?obj"), Holding("?obj")},
+               {NOISE_OUTCOME}]
+    effect_probs = [1.0, 0.0]
+    all_ndrs[action] = NDRSet(action, [NDR(action, preconditions,
+                                           effect_probs, effects)])
+
+    action = Place("?obj", "?basex", "?basey", "?basez", "?gripx", "?gripy", "?gripz")
+    preconditions = [InRoom1(), HandFull(), HoldingSide("?obj"), Holding("?obj"),
+                     IsValidPlace("?basex", "?basey", "?basez",
+                                 "?gripx", "?gripy", "?gripz", "?obj")]
+    effects = [{OnTargetTable("?obj"), HandEmpty(),
+                Anti(HandFull()), Anti(HoldingSide("?obj")), Anti(Holding("?obj"))}, {NOISE_OUTCOME}]
+    effect_probs = [1.0, 0.0]
+    all_ndrs[action] = NDRSet(action, [NDR(action, preconditions,
+                                           effect_probs, effects)])
+
+    action = MoveToRoom1("?obj", "?basex", "?basey", "?basez")
+    preconditions = [InRoom0(), HandFull(), HoldingSide("?obj"), Holding("?obj"),
+                     IsValidMove("?basex", "?basey", "?basez")]
+    effects = [{Anti(InRoom0()), InRoom1()}, {NOISE_OUTCOME}]
     effect_probs = [1.0, 0.0]
     all_ndrs[action] = NDRSet(action, [NDR(action, preconditions,
                                            effect_probs, effects)])
