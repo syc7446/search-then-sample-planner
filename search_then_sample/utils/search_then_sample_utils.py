@@ -10,14 +10,14 @@ from itertools import islice, count
 
 from pybullet_planning.pybullet_tools.ikfast.pr2.ik import is_ik_compiled, pr2_inverse_kinematics
 from pybullet_planning.pybullet_tools.pr2_primitives import create_trajectory, iterate_approach_path, Commands, State, \
-    SELF_COLLISIONS, Conf
+    SELF_COLLISIONS, Conf, get_ir_sampler
 from pybullet_planning.pybullet_tools.pr2_utils import get_gripper_link, get_arm_joints, arm_conf, open_arm, get_aabb, \
     get_disabled_collisions, get_group_joints, learned_pose_generator, PR2_GROUPS
 from pybullet_planning.pybullet_tools.utils import is_placement, multiply, invert, set_joint_positions, pairwise_collision, \
     get_joint_positions, plan_direct_joint_motion, plan_joint_motion, joint_from_name, all_between, BodySaver, \
     LockRenderer, get_bodies, get_joint_limits, set_joint_limits, get_default_resolution, uniform_pose_generator, Saver, \
     PoseSaver, ConfSaver, get_configuration, remove_body, inverse_kinematics_helper, get_movable_joints, get_link_pose, \
-    is_pose_close, elapsed_time, irange, create_sub_robot, INF
+    is_pose_close, elapsed_time, irange, create_sub_robot, get_custom_limits, sub_inverse_kinematics, INF
 
 
 from pybullet_planning.pybullet_tools.utils import join_paths, get_parent_dir
@@ -25,6 +25,7 @@ MODEL_DIRECTORY = join_paths(get_parent_dir(__file__), os.pardir, '../pybullet_p
 ROOM_FLOOR = join_paths(MODEL_DIRECTORY, 'room_floor.urdf')
 SHORT_FLOOR = join_paths(MODEL_DIRECTORY, 'short_floor.urdf')
 ROOMS = join_paths(MODEL_DIRECTORY, 'rooms.urdf')
+SINGLE_ROOM = join_paths(MODEL_DIRECTORY, 'single_room.urdf')
 
 
 class MergedPath(object):
@@ -49,10 +50,7 @@ class MergedPath(object):
 ##################################################
 
 
-def base_motion(robot, room_floors, base_start, base_goal, obstacles=[], attachments=[], target=None):
-    custom_limits = {}
-    custom_limits[0], custom_limits[1] = get_custom_limits(robot, room_floors, target)
-
+def base_motion(robot, base_start, base_goal, obstacles=[], attachments=[], custom_limits={}):
     disabled_collisions = get_disabled_collisions(robot)
     base_joints = [joint_from_name(robot, name) for name in PR2_GROUPS['base']]
     set_joint_positions(robot, base_joints, base_start)
@@ -134,7 +132,7 @@ def get_ik_fn(problem, custom_limits={}, collisions=True, teleport=False):
     return fn
 
 
-def get_ir_sampler(problem, custom_limits={}, max_attempts=25, collisions=True, learned=True):
+def get_ir_sampler_legacy(problem, custom_limits={}, max_attempts=25, collisions=True, learned=True):
     robot = problem.robot
     obstacles = problem.fixed if collisions else []
     gripper = problem.get_gripper()
@@ -213,7 +211,7 @@ def get_ik_ir_gen(problem, max_attempts=25, learned=True, teleport=False, **kwar
     return gen
 
 
-def get_custom_limits(robot, room_floors, target=None):
+def get_custom_limits_legacy(robot, room_floors, target=None):
     if isinstance(room_floors, int):
         limits = get_aabb(room_floors)
         return (limits.lower[0], limits.upper[0]), (limits.lower[1], limits.upper[1])
@@ -261,7 +259,7 @@ def apply_margin(base_goal, custom_limits, margin_to_walls):
     return (safe_base_goal, base_goal.value[1])
 
 
-def plan_cartesian_motion(robot, first_joint, target_link, waypoint_poses,
+def plan_cartesian_motion_legacy(robot, first_joint, target_link, waypoint_poses,
                           max_iterations=200, max_time=INF, custom_limits={}, **kwargs):
     # TODO: fix stationary joints
     # TODO: pass in set of movable joints and take least common ancestor
@@ -310,12 +308,6 @@ def plan_cartesian_motion(robot, first_joint, target_link, waypoint_poses,
     # TODO: finally:
     remove_body(sub_robot)
     return solutions
-
-def sub_inverse_kinematics(robot, first_joint, target_link, target_pose, **kwargs):
-    solutions = plan_cartesian_motion(robot, first_joint, target_link, [target_pose], **kwargs)
-    if solutions:
-        return solutions[0]
-    return None
 
 
 def storeData(path=None, robot=None):

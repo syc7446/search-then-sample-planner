@@ -6,8 +6,8 @@ import search_then_sample.utils.structs as structs
 from search_then_sample.utils.env_base import Environment, EnvironmentFailure
 from search_then_sample.utils.utils import WORLD
 import search_then_sample.utils.constants as constants
-from search_then_sample.utils.search_then_sample_utils import get_ik_ir_gen, base_motion, MergedPath, \
-    SAHashable, SINGLE_ROOM
+from search_then_sample.utils.search_then_sample_utils import get_ik_ir_gen, base_motion, get_base_custom_limits, MergedPath, \
+    apply_margin, SAHashable, ROOM_FLOOR, ROOMS
 from pybullet_planning.pybullet_tools.utils import get_pose, get_joint_positions, joints_from_names, is_placement, \
     set_base_values, load_pybullet, create_box, set_point, sample_placement, set_pose, joint_from_name, \
     set_joint_positions, wait_for_duration, TABLE_URDF, WorldSaver
@@ -44,6 +44,8 @@ class PickPlaceEnvironment(Environment):
     HoldingSide = structs.Predicate("HoldingSide", 1, [_obj_type])
     HandEmpty = structs.Predicate("HandEmpty", 0, [])
     HandFull = structs.Predicate("HandFull", 0, [])
+    InRoom0 = structs.Predicate("InRoom0", 0, [])
+    InRoom1 = structs.Predicate("InRoom1", 0, [])
     IsValidPick = structs.Predicate("IsValidPick", 7,
                                      [_xbase_type, _ybase_type, _zbase_type,
                                       _xgrip_type, _ygrip_type, _zgrip_type,
@@ -52,8 +54,10 @@ class PickPlaceEnvironment(Environment):
                                     [_xbase_type, _ybase_type, _zbase_type,
                                      _xgrip_type, _ygrip_type, _zgrip_type,
                                      _obj_type])
+    IsValidMove = structs.Predicate("IsValidMove", 3,
+                                    [_xbase_type, _ybase_type, _zbase_type])
     _all_predicates = {OnTable, OnTargetTable, Holding, HoldingSide, HandEmpty,
-                       HandFull, IsValidPick, IsValidPlace}
+                       HandFull, InRoom0, InRoom1, IsValidPick, IsValidPlace, IsValidMove}
     _all_predicate_names_to_preds = {p.name: p for p in _all_predicates}
     _continuous_predicates = {pred for pred in _all_predicates
                               if any(t.is_continuous for t in pred.var_types)}
@@ -67,11 +71,14 @@ class PickPlaceEnvironment(Environment):
                              [_obj_type,
                               _xbase_type, _ybase_type, _zbase_type,
                               _xgrip_type, _ygrip_type, _zgrip_type])
-    action_predicates = {Pick, Place}
+    MoveToRoom1 = structs.Predicate("MoveToRoom1", 4,
+                                    [_obj_type, _xbase_type, _ybase_type, _zbase_type])
+    action_predicates = {Pick, Place, MoveToRoom1}
 
-    def __init__(self, num_objs, num_sample_trials, margin_to_walls, seed):
+    def __init__(self, num_objs, num_rooms, num_sample_trials, margin_to_walls, seed):
         super().__init__(num_objs, seed)
         self._num_targets = num_objs  # each object has a target
+        self._num_rooms = num_rooms
         self._num_sample_trials = num_sample_trials
         self._margin_to_walls = margin_to_walls
         self._objs = []
@@ -107,6 +114,10 @@ class PickPlaceEnvironment(Environment):
             if pred_name == "HandEmpty" and held_obj is None:
                 lits.add(pred())
             if pred_name == "HandFull" and held_obj is not None:
+                lits.add(pred())
+            if pred_name == "InRoom0" and is_placement(self.robot, self.room_floors[0]):
+                lits.add(pred())
+            if pred_name == "InRoom1" and is_placement(self.robot, self.room_floors[1]):
                 lits.add(pred())
         return lits
 
@@ -162,7 +173,9 @@ class PickPlaceEnvironment(Environment):
         Return dict from predicate argument index to value.
         """
         print('===Sampling in IsValidPick===')
-        self.ik_ir_fn = get_ik_ir_gen(self.problem, custom_limits=self.custom_limits)
+        # TODO: currently hardcoded for Room0
+        self.ik_ir_fn = get_ik_ir_gen(self.problem,
+                                      custom_limits=get_base_custom_limits(self.robot, self.room_floors[0]))
 
         saved_world = WorldSaver()
         base_start = get_joint_positions(self.robot, joints_from_names(self.robot, PR2_GROUPS['base']))
@@ -178,13 +191,27 @@ class PickPlaceEnvironment(Environment):
                 self._error_msg(i, 'IsValidPick')
                 continue
             result_saved_world = WorldSaver()
-            base_path = base_motion(self.robot, base_start, output[0].values,
-                                    obstacles=self.problem.fixed, custom_limits=self.custom_limits)
+            base_path = base_motion(self.robot, self.room_floors, base_start, output[0].values,
+                                    obstacles=self.problem.fixed)
             if base_path: break
             self._error_msg(i, 'IsValidPick')
         arm_path = [output[1].commands[0].path[i].values for i in range(len(output[1].commands[0].path))]
         self.merged_path.add(actions=['base', 'arm'], paths=[base_path, arm_path],
                              attachments=[None, None])
+
+        # Visualization for debugging
+        # saved_world.restore()
+        # for bq in base_path:
+        #     set_joint_positions(self.robot, [joint_from_name(self.robot, name) for name in PR2_GROUPS['base']], bq)
+        #     wait_for_duration(0.01)
+        # for aq in arm_path:
+        #     set_joint_positions(self.robot, [joint_from_name(self.robot, name) for name in PR2_GROUPS['left_arm']], aq)
+        #     wait_for_duration(0.01)
+        # base_path_2 = base_motion(self.robot, self.room_floors, output[0].values, (0, 2, 0), obstacles=self.problem.fixed)
+        # for bq in base_path_2:
+        #     set_joint_positions(self.robot, [joint_from_name(self.robot, name) for name in PR2_GROUPS['base']], bq)
+        #     output[2][self._objs_to_obj_ids[obj]].assign()
+        #     wait_for_duration(0.01)
 
         result_saved_world.restore()
         basex, basey, basez = output[0].values
@@ -197,7 +224,8 @@ class PickPlaceEnvironment(Environment):
         """
         print('===Sampling in IsValidPlace===')
         # TODO: currently hardcoded for Room1
-        self.ik_ir_fn = get_ik_ir_gen(self.problem, custom_limits=self.custom_limits)
+        self.ik_ir_fn = get_ik_ir_gen(self.problem,
+                                      custom_limits=get_base_custom_limits(self.robot, self.room_floors[1]))
 
         saved_world = WorldSaver()
         base_start = get_joint_positions(self.robot, joints_from_names(self.robot, PR2_GROUPS['base']))
@@ -213,8 +241,8 @@ class PickPlaceEnvironment(Environment):
                 self._error_msg(i, 'IsValidPlace')
                 continue
             result_saved_world = WorldSaver()
-            base_path = base_motion(self.robot, base_start, output[0].values, obstacles=self.problem.fixed,
-                                    attachments=[self.attachment], custom_limits=self.custom_limits)
+            base_path = base_motion(self.robot, self.room_floors, base_start, output[0].values,
+                                    obstacles=self.problem.fixed, attachments=[self.attachment])
             if base_path: break
             self._error_msg(i, 'IsValidPlace')
         arm_path = [output[1].commands[0].path[i].values for i in range(len(output[1].commands[0].path))]
@@ -227,6 +255,32 @@ class PickPlaceEnvironment(Environment):
         gripx, gripy, gripz = output[3]
         return {0: basex, 1: basey, 2: basez, 3: gripx, 4: gripy, 5: gripz}
 
+    def sample_IsValidMove(self, state, obj, rng=None):
+        """Sample values for continuous arguments of IsValidMove.
+        Return dict from predicate argument index to value.
+        """
+        print('===Sampling in IsValidMove===')
+        target_room = self.room_floors[1] # TODO: currently hardcoded for Room1 but change it to any Rooms later
+        custom_limits = get_base_custom_limits(self.robot, self.room_floors[1]) # TODO: currently hardcoded
+        saved_world = WorldSaver()
+        base_start = get_joint_positions(self.robot, joints_from_names(self.robot, PR2_GROUPS['base']))
+        goal_gen = self.placement_gen_fn(self.robot, target_room)
+
+        for i in range(self._num_sample_trials):
+            (base_goal,) = next(goal_gen)
+            base_goal.value = apply_margin(base_goal, custom_limits, self._margin_to_walls) # Find a safer base goal
+            saved_world.restore()
+            base_path = base_motion(self.robot, self.room_floors, base_start, base_goal.value[0],
+                                    obstacles=self.problem.fixed, attachments=[self.attachment],
+                                    target=target_room)
+            if base_path: break
+            self._error_msg(i, 'IsValidMove')
+        self.merged_path.add(actions=['base'], paths=[base_path],
+                             attachments=[self.attachment])
+
+        basex, basey, basez = base_goal.value[0]
+        return {0: basex, 1: basey, 2: basez}
+
     def _error_msg(self, i, msg):
         if i == self._num_sample_trials - 1:
             # TODO: appropriately handle this later
@@ -237,13 +291,17 @@ class PickPlaceEnvironment(Environment):
         initial_conf = get_carry_conf(self.arm, grasp_type)
 
         plane = create_floor()
-        room = load_pybullet(SINGLE_ROOM)
-        self.custom_limits = {0: (-3., 3.), 1: (-3., 3.)}
+        self.room_floors = []
+        for i in range(self._num_rooms):
+            self.room_floors.append(load_pybullet(ROOM_FLOOR))
+        set_point(self.room_floors[1], (0, 6, 0))
+        set_point(self.room_floors[2], (0, 12, 0))
+        rooms = load_pybullet(ROOMS)
 
         self.table = load_pybullet(TABLE_URDF)
         set_point(self.table, (0, -2, 0))
         self.target_table = load_pybullet(TABLE_URDF)
-        set_point(self.target_table, (0, 2, 0))
+        set_point(self.target_table, (0, 8, 0))
         box = create_box(.07, .05, .15)
         set_point(box, (0, -2, TABLE_MAX_Z + .15 / 2))
 
@@ -259,7 +317,7 @@ class PickPlaceEnvironment(Environment):
 
     @property
     def literal_goal(self):
-        return {self.OnTargetTable(self._objs[-1]), self.HandEmpty()}
+        return {self.OnTargetTable(self._objs[-1]), self.HandEmpty(), self.InRoom1()}
 
     @property
     def discrete_predicates(self):

@@ -13,22 +13,21 @@ env_name = "pickplace" # Options: pickplace
 arm = 'left'
 grasp_type = 'side'
 num_objs = 1
-num_rooms = 3
+# num_rooms = 3
 num_sample_trials = 20 # number of trials in sampling
 num_samples_per_step = 10 # related to backtracking
 margin_to_walls = .5
-is_gui_debug = False
+is_gui_debug = True
 ###
 
 
 connect(use_gui=is_gui_debug)
 disable_real_time()
-set_camera_pose(camera_point=(-0.4, 3, 5), target_point=(0, 3, 0))
+set_camera_pose(camera_point=(-1.0, 0, 3), target_point=(0, 0, 0))
 
 if env_name == "pickplace":
-    env = PickPlaceEnvironment(num_objs=num_objs, num_rooms=num_rooms,
-                               num_sample_trials=num_sample_trials, margin_to_walls=margin_to_walls,
-                               seed=0)
+    env = PickPlaceEnvironment(num_objs=num_objs, num_sample_trials=num_sample_trials,
+                               margin_to_walls=margin_to_walls, seed=0)
 
 planner = Planner(seed=0, timeout=constants.PLANNER_TIMEOUT,
                   heuristic_name="PyperplanHAddHeuristic",

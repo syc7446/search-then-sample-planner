@@ -12,18 +12,17 @@ env_name = "pickplace" # Options: pickplace
 arm = 'left'
 grasp_type = 'side'
 num_objs = 1
-num_rooms = 3
+# num_rooms = 3
 num_sample_trials = 20
 margin_to_walls = .5
 ###
 
 connect(use_gui=True)
 disable_real_time()
-set_camera_pose(camera_point=(-0.4, 3, 5), target_point=(0, 3, 0))
+set_camera_pose(camera_point=(-1, 0, 3), target_point=(0, 0, 0))
 
-env = PickPlaceEnvironment(num_objs=num_objs, num_rooms=num_rooms,
-                           num_sample_trials=num_sample_trials, margin_to_walls=margin_to_walls,
-                           seed=0)
+env = PickPlaceEnvironment(num_objs=num_objs, num_sample_trials=num_sample_trials,
+                           margin_to_walls=margin_to_walls, seed=0)
 state = env.initial_pybullet_setup(arm, grasp_type)
 
 path = join_paths(get_parent_dir(__file__), os.pardir, '.')
