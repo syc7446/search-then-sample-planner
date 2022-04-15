@@ -11,7 +11,7 @@ from datetime import datetime, date, time
 
 from pybullet_planning.pybullet_tools.ikfast.pr2.ik import is_ik_compiled, pr2_inverse_kinematics
 from pybullet_planning.pybullet_tools.pr2_primitives import create_trajectory, iterate_approach_path, Commands, State, \
-    SELF_COLLISIONS, Conf, get_ir_sampler
+    SELF_COLLISIONS, Conf
 from pybullet_planning.pybullet_tools.pr2_utils import get_gripper_link, get_arm_joints, arm_conf, open_arm, get_aabb, \
     get_disabled_collisions, get_group_joints, learned_pose_generator, PR2_GROUPS
 from pybullet_planning.pybullet_tools.utils import is_placement, multiply, invert, set_joint_positions, pairwise_collision, \
@@ -67,9 +67,49 @@ def base_motion(robot, base_start, base_goal, obstacles=[], attachments=[], cust
     return base_path
 
 
-def get_ik_fn(problem, custom_limits={}, collisions=True, teleport=False):
+def get_ir_sampler(problem, custom_limits={}, max_attempts=25, collisions=True, collision_objs=[], learned=True):
     robot = problem.robot
-    obstacles = problem.fixed if collisions else []
+    obstacles = collision_objs if collisions else []
+    gripper = problem.get_gripper()
+
+    def gen_fn(arm, obj, pose, grasp):
+        pose.assign()
+        approach_obstacles = {obst for obst in obstacles if not is_placement(obj, obst)}
+        for _ in iterate_approach_path(robot, arm, gripper, pose, grasp, body=obj):
+            if any(pairwise_collision(gripper, b) or pairwise_collision(obj, b) for b in approach_obstacles):
+                return
+        gripper_pose = multiply(pose.value, invert(grasp.value)) # w_f_g = w_f_o * (g_f_o)^-1
+        default_conf = arm_conf(arm, grasp.carry)
+        arm_joints = get_arm_joints(robot, arm)
+        base_joints = get_group_joints(robot, 'base')
+        if learned:
+            base_generator = learned_pose_generator(robot, gripper_pose, arm=arm, grasp_type=grasp.grasp_type)
+        else:
+            base_generator = uniform_pose_generator(robot, gripper_pose)
+        lower_limits, upper_limits = get_custom_limits(robot, base_joints, custom_limits)
+        while True:
+            count = 0
+            for base_conf in islice(base_generator, max_attempts):
+                count += 1
+                if not all_between(lower_limits, base_conf, upper_limits):
+                    continue
+                bq = Conf(robot, base_joints, base_conf)
+                pose.assign()
+                bq.assign()
+                set_joint_positions(robot, arm_joints, default_conf)
+                if any(pairwise_collision(robot, b) for b in obstacles + [obj]):
+                    continue
+                #print('IR attempts:', count)
+                yield (bq,)
+                break
+            else:
+                yield None
+    return gen_fn
+
+
+def get_ik_fn(problem, custom_limits={}, collisions=True, collision_objs=[], teleport=False):
+    robot = problem.robot
+    obstacles = collision_objs if collisions else []
     if is_ik_compiled():
         print('Using ikfast for inverse kinematics')
     else:

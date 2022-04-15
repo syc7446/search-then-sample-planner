@@ -1,6 +1,7 @@
 import numpy as np
 import pybullet as p
 import random
+import copy
 
 import search_then_sample.utils.structs as structs
 from search_then_sample.utils.env_base import Environment, EnvironmentFailure
@@ -116,7 +117,6 @@ class PickPlaceEnvironment(Environment):
             return self._transmodel_cache[sa_hashable]
         next_state = {k: v.copy() for k, v in state.items()}
 
-        # TODO: currently only a single object is considered
         if self.attachment:
             for i, obj in enumerate(self._objs):
                 next_state[obj]["pose"] = get_pose(self.problem.movable[i])[0]+get_pose(self.problem.movable[i])[1]
@@ -162,7 +162,10 @@ class PickPlaceEnvironment(Environment):
         Return dict from predicate argument index to value.
         """
         print('===Sampling in IsValidPick===')
-        self.ik_ir_fn = get_ik_ir_gen(self.problem, custom_limits=self.custom_limits)
+        movable_obstacles = copy.deepcopy(self.problem.movable)
+        movable_obstacles.remove(self._objs_to_obj_ids[obj])
+        collision_objs = self.problem.fixed + movable_obstacles
+        self.ik_ir_fn = get_ik_ir_gen(self.problem, custom_limits=self.custom_limits, collision_objs=collision_objs)
 
         saved_world = WorldSaver()
         base_start = get_joint_positions(self.robot, joints_from_names(self.robot, PR2_GROUPS['base']))
@@ -196,7 +199,10 @@ class PickPlaceEnvironment(Environment):
         Return dict from predicate argument index to value.
         """
         print('===Sampling in IsValidPlace===')
-        self.ik_ir_fn = get_ik_ir_gen(self.problem, custom_limits=self.custom_limits)
+        movable_obstacles = copy.deepcopy(self.problem.movable)
+        movable_obstacles.remove(self._objs_to_obj_ids[obj])
+        collision_objs = self.problem.fixed + movable_obstacles
+        self.ik_ir_fn = get_ik_ir_gen(self.problem, custom_limits=self.custom_limits, collision_objs=collision_objs)
 
         saved_world = WorldSaver()
         base_start = get_joint_positions(self.robot, joints_from_names(self.robot, PR2_GROUPS['base']))
