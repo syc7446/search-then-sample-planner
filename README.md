@@ -12,9 +12,16 @@ pip install -r requirements.txt
 ```
 
 ## Usage
-Install dependencies listed below and run `python main.py`. Expected output is that it should run 10 planning problems on the blocks environment and succeed on all. Each call to planning should take 3-10 seconds.
 
-If you want to watch it go, you can turn on `USE_VIEWER` in `constants.py`. You can also change `env_name` to the bins environment in `main.py`.
+To run the main search-then-sample planner, do:
+```
+python -m search_then_sample.main.py
+```
+
+The found path will be saved as a .pth file in the data folder. To visualize the path, do:
+```
+python -m search_then_sample.visualizer.py --load_file=[FILE NAME]
+```
 
 ## Notes
 * The TAMP planner is defined in `planner.py` and uses heuristics defined in `planner_heuristics.py`. This planner is built off [Srivastava 2014](https://people.eecs.berkeley.edu/~russell/papers/icra14-planrob.pdf). It uses a high-level A* search over plan skeletons, informed by a domain-independent classical heuristic such as hadd. For any skeleton which reaches the goal at the symbolic level, a backtracking search is conducted over calls to the environment-defined samplers for values of the continuous action parameters in the skeleton.
