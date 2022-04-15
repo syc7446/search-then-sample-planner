@@ -15,7 +15,7 @@ def get_groundtruth_ndrs(env_name, env):
 
 def _gtndrs_pickplace(env):
     OnTable = env.OnTable
-    OnTargetTable = env.OnTargetTable
+    OnStove = env.OnStove
     Holding = env.Holding
     HoldingSide = env.HoldingSide
     HandEmpty = env.HandEmpty
@@ -43,7 +43,7 @@ def _gtndrs_pickplace(env):
     preconditions = [HandFull(), HoldingSide("?obj"), Holding("?obj"),
                      IsValidPlace("?basex", "?basey", "?basez",
                                  "?gripx", "?gripy", "?gripz", "?obj")]
-    effects = [{OnTargetTable("?obj"), HandEmpty(),
+    effects = [{OnStove("?obj"), HandEmpty(),
                 Anti(HandFull()), Anti(HoldingSide("?obj")), Anti(Holding("?obj"))}, {NOISE_OUTCOME}]
     effect_probs = [1.0, 0.0]
     all_ndrs[action] = NDRSet(action, [NDR(action, preconditions,

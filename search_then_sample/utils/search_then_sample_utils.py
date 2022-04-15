@@ -7,6 +7,7 @@ import pickle
 import numpy as np
 import pybullet as p
 from itertools import islice, count
+from datetime import datetime, date, time
 
 from pybullet_planning.pybullet_tools.ikfast.pr2.ik import is_ik_compiled, pr2_inverse_kinematics
 from pybullet_planning.pybullet_tools.pr2_primitives import create_trajectory, iterate_approach_path, Commands, State, \
@@ -310,13 +311,20 @@ def plan_cartesian_motion_legacy(robot, first_joint, target_link, waypoint_poses
     return solutions
 
 
-def storeData(path=None, robot=None):
+def storeData(path=None, robot=None, env_name=None, arm=None, grasp_type=None, num_objs=None,
+              num_sample_trials=None, margin_to_walls=None):
     db = {}
     db['path'] = path
     db['robot'] = robot
+    db['env_name'] = env_name
+    db['arm'] = arm
+    db['grasp_type'] = grasp_type
+    db['num_objs'] = num_objs
+    db['num_sample_trials'] = num_sample_trials
+    db['margin_to_walls'] = margin_to_walls
 
     path = join_paths(get_parent_dir(__file__), os.pardir, '../')
-    dbfile = open(path+'/data/save_data', 'ab')
+    dbfile = open(path+'/data/save_data_{}'.format(datetime.now()), 'ab')
     pickle.dump(db, dbfile)
     dbfile.close()
 

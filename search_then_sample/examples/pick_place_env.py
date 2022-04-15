@@ -10,7 +10,7 @@ from search_then_sample.utils.search_then_sample_utils import get_ik_ir_gen, bas
     SAHashable, SINGLE_ROOM
 from pybullet_planning.pybullet_tools.utils import get_pose, get_joint_positions, joints_from_names, is_placement, \
     set_base_values, load_pybullet, create_box, set_point, sample_placement, set_pose, joint_from_name, \
-    set_joint_positions, wait_for_duration, TABLE_URDF, WorldSaver
+    set_joint_positions, wait_for_duration, TABLE_URDF, WorldSaver, STOVE_URDF
 from pybullet_planning.pybullet_tools.pr2_utils import get_other_arm, get_carry_conf, set_arm_conf, open_arm, PR2_GROUPS, \
     arm_conf, close_arm, REST_LEFT_ARM
 from pybullet_planning.pybullet_tools.pr2_primitives import get_stable_gen, get_grasp_gen, Pose
@@ -39,7 +39,7 @@ class PickPlaceEnvironment(Environment):
 
     # Predicates
     OnTable = structs.Predicate("OnTable", 1, [_obj_type])
-    OnTargetTable = structs.Predicate("OnTargetTable", 1, [_obj_type])
+    OnStove = structs.Predicate("OnStove", 1, [_obj_type])
     Holding = structs.Predicate("Holding", 1, [_obj_type])
     HoldingSide = structs.Predicate("HoldingSide", 1, [_obj_type])
     HandEmpty = structs.Predicate("HandEmpty", 0, [])
@@ -52,7 +52,7 @@ class PickPlaceEnvironment(Environment):
                                     [_xbase_type, _ybase_type, _zbase_type,
                                      _xgrip_type, _ygrip_type, _zgrip_type,
                                      _obj_type])
-    _all_predicates = {OnTable, OnTargetTable, Holding, HoldingSide, HandEmpty,
+    _all_predicates = {OnTable, OnStove, Holding, HoldingSide, HandEmpty,
                        HandFull, IsValidPick, IsValidPlace}
     _all_predicate_names_to_preds = {p.name: p for p in _all_predicates}
     _continuous_predicates = {pred for pred in _all_predicates
@@ -95,9 +95,9 @@ class PickPlaceEnvironment(Environment):
                 obj_pose = state[obj]["pose"]
                 if obj == held_obj:
                     continue
-                if pred_name == "OnTable" and is_placement(self._objs_to_obj_ids[obj], self.table):
+                if pred_name == "OnTable" and is_placement(self._objs_to_obj_ids[obj], self.table[0]):
                     lits.add(pred(obj))
-                if pred_name == "OnTargetTable" and is_placement(self._objs_to_obj_ids[obj], self.target_table):
+                if pred_name == "OnStove" and is_placement(self._objs_to_obj_ids[obj], self.stove):
                     lits.add(pred(obj))
             if pred_name == "HoldingSide" and held_obj is not None and \
                top_or_side == "side":
@@ -196,12 +196,11 @@ class PickPlaceEnvironment(Environment):
         Return dict from predicate argument index to value.
         """
         print('===Sampling in IsValidPlace===')
-        # TODO: currently hardcoded for Room1
         self.ik_ir_fn = get_ik_ir_gen(self.problem, custom_limits=self.custom_limits)
 
         saved_world = WorldSaver()
         base_start = get_joint_positions(self.robot, joints_from_names(self.robot, PR2_GROUPS['base']))
-        placement_gen = self.placement_gen_fn(self._objs_to_obj_ids[obj], self.target_table)
+        placement_gen = self.placement_gen_fn(self._objs_to_obj_ids[obj], self.stove)
         grasps = list(self.grasp_gen_fn(self._objs_to_obj_ids[obj]))
 
         for i in range(self._num_sample_trials):
@@ -240,12 +239,19 @@ class PickPlaceEnvironment(Environment):
         room = load_pybullet(SINGLE_ROOM)
         self.custom_limits = {0: (-3., 3.), 1: (-3., 3.)}
 
-        self.table = load_pybullet(TABLE_URDF)
-        set_point(self.table, (0, -2, 0))
-        self.target_table = load_pybullet(TABLE_URDF)
-        set_point(self.target_table, (0, 2, 0))
-        box = create_box(.07, .05, .15)
-        set_point(box, (0, -2, TABLE_MAX_Z + .15 / 2))
+        self.table = []
+        self.table.append(load_pybullet(TABLE_URDF))
+        set_point(self.table[0], (0, -2, 0))
+        self.table.append(load_pybullet(TABLE_URDF))
+        set_point(self.table[1], (0, 2, 0))
+        self.stove = load_pybullet(STOVE_URDF)
+        set_point(self.stove, (0.2, 1.8, TABLE_MAX_Z + .15 / 2))
+        boxes = []
+        displacement = 0
+        for i in range(self._num_objs):
+            boxes.append(create_box(.07, .05, .15))
+            set_point(boxes[i], (0+displacement, -2+displacement, TABLE_MAX_Z + .15 / 2))
+            displacement += 0.2
 
         self.robot = create_pr2()
         set_base_values(self.robot, (0, 0, 0))
@@ -253,13 +259,14 @@ class PickPlaceEnvironment(Environment):
         open_arm(self.robot, self.arm)
         set_arm_conf(self.robot, other_arm, arm_conf(other_arm, REST_LEFT_ARM))
         close_arm(self.robot, other_arm)
-        return Problem(robot=self.robot, movable=[box], arms=[self.arm], grasp_types=[grasp_type],
-                       surfaces=[self.table, self.target_table],
-                       goal_conf=get_pose(self.robot), goal_holding=[(self.arm, box)])
+        return Problem(robot=self.robot, movable=boxes, arms=[self.arm], grasp_types=[grasp_type],
+                       surfaces=[self.table[0], self.stove])
 
     @property
     def literal_goal(self):
-        return {self.OnTargetTable(self._objs[-1]), self.HandEmpty()}
+        goal = {self.OnStove(self._objs[i]) for i in range(self._num_objs)}
+        goal.add(self.HandEmpty())
+        return goal
 
     @property
     def discrete_predicates(self):
