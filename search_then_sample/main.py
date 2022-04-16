@@ -14,23 +14,20 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--env_name', type=str, default="pickplace")
 parser.add_argument('--arm', type=str, default='left')
 parser.add_argument('--grasp_type', type=str, default='side')
-parser.add_argument('--num_objs', type=int, default=3, help='number of movable objects')
-parser.add_argument('--num_sample_trials', type=int, default=20)
+parser.add_argument('--num_objs', type=int, default=2, help='number of movable objects')
 parser.add_argument('--num_samples_per_step', type=int, default=10)
-parser.add_argument('--margin_to_walls', type=float, default=.5)
-parser.add_argument('--is_gui_debug', type=bool, default=False)
+parser.add_argument('--use_gui', action='store_true')
 
 opt = parser.parse_args()
 print(opt)
 
 
-connect(use_gui=opt.is_gui_debug)
+connect(use_gui=opt.use_gui)
 disable_real_time()
 set_camera_pose(camera_point=(-1.0, 0, 3), target_point=(0, 0, 0))
 
 if opt.env_name == "pickplace":
-    env = PickPlaceEnvironment(num_objs=opt.num_objs, num_sample_trials=opt.num_sample_trials,
-                               margin_to_walls=opt.margin_to_walls, seed=0)
+    env = PickPlaceEnvironment(num_objs=opt.num_objs, seed=0)
 
 planner = Planner(seed=0, timeout=constants.PLANNER_TIMEOUT,
                   heuristic_name="PyperplanHAddHeuristic",
@@ -41,8 +38,8 @@ state, robot = env.initial_pybullet_setup(opt.arm, opt.grasp_type)
 start_time = time.time()
 try:
     plan, merged_path = planner.plan(env, state, all_ndrs)
-    storeData(path=merged_path, robot=robot, env_name=opt.env_name, arm=opt.arm, grasp_type=opt.grasp_type,
-              num_objs=opt.num_objs, num_sample_trials=opt.num_sample_trials, margin_to_walls=opt.margin_to_walls)
+    storeData(path=merged_path, robot=robot, env_name=opt.env_name, arm=opt.arm,
+              grasp_type=opt.grasp_type, num_objs=opt.num_objs)
 except (PlanningExhausted, PlanningTimeout) as e:
     print(f"planning failed with error: {e}")
 print("finished in {:.5f} seconds".format(time.time()-start_time))

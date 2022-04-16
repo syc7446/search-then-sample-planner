@@ -27,8 +27,6 @@ env_name = db['env_name']
 arm = db['arm']
 grasp_type = db['grasp_type']
 num_objs = db['num_objs']
-num_sample_trials = db['num_sample_trials']
-margin_to_walls = db['margin_to_walls']
 
 
 connect(use_gui=True)
@@ -36,8 +34,7 @@ disable_real_time()
 set_camera_pose(camera_point=(-1, 0, 3), target_point=(0, 0, 0))
 
 if env_name == "pickplace":
-    env = PickPlaceEnvironment(num_objs=num_objs, num_sample_trials=num_sample_trials,
-                               margin_to_walls=margin_to_walls, seed=0)
+    env = PickPlaceEnvironment(num_objs=num_objs, seed=0)
 state = env.initial_pybullet_setup(arm, grasp_type)
 
 for i in range(len(actions)):

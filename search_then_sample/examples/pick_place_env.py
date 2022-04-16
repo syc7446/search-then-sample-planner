@@ -70,11 +70,9 @@ class PickPlaceEnvironment(Environment):
                               _xgrip_type, _ygrip_type, _zgrip_type])
     action_predicates = {Pick, Place}
 
-    def __init__(self, num_objs, num_sample_trials, margin_to_walls, seed):
+    def __init__(self, num_objs, seed):
         super().__init__(num_objs, seed)
         self._num_targets = num_objs  # each object has a target
-        self._num_sample_trials = num_sample_trials
-        self._margin_to_walls = margin_to_walls
         self._objs = []
         for i in range(self._num_objs):
             self._objs.append(self._obj_type("obj{}".format(i)))
@@ -157,7 +155,7 @@ class PickPlaceEnvironment(Environment):
     def get_merged_path(self):
         return self.merged_path
 
-    def sample_IsValidPick(self, state, obj, rng=None):
+    def sample_IsValidPick(self, state, obj, rng=None, pre_saved_world=None):
         """Sample values for continuous arguments of IsValidPick.
         Return dict from predicate argument index to value.
         """
@@ -167,24 +165,31 @@ class PickPlaceEnvironment(Environment):
         collision_objs = self.problem.fixed + movable_obstacles
         self.ik_ir_fn = get_ik_ir_gen(self.problem, custom_limits=self.custom_limits, collision_objs=collision_objs)
 
-        saved_world = WorldSaver()
+        if not pre_saved_world: saved_world = WorldSaver()
+        else:
+            saved_world = pre_saved_world
+            saved_world.restore()
+
         base_start = get_joint_positions(self.robot, joints_from_names(self.robot, PR2_GROUPS['base']))
         p = Pose(self._objs_to_obj_ids[obj])
         grasps = list(self.grasp_gen_fn(self._objs_to_obj_ids[obj]))
 
-        for i in range(self._num_sample_trials):
+        saved_world.restore()
+        (g,) = random.choice(grasps)
+        self.attachment = g.get_attachment(self.robot, self.arm)
+        output = next(self.ik_ir_fn(self.arm, self._objs_to_obj_ids[obj], p, g), None)
+        if not output:
+            print('Plan fails: pick in IsValidPick')
             saved_world.restore()
-            (g,) = random.choice(grasps)
-            self.attachment = g.get_attachment(self.robot, self.arm)
-            output = next(self.ik_ir_fn(self.arm, self._objs_to_obj_ids[obj], p, g), None)
-            if not output:
-                self._error_msg(i, 'IsValidPick')
-                continue
-            result_saved_world = WorldSaver()
-            base_path = base_motion(self.robot, base_start, output[0].values,
-                                    obstacles=self.problem.fixed, custom_limits=self.custom_limits)
-            if base_path: break
-            self._error_msg(i, 'IsValidPick')
+            return None
+        result_saved_world = WorldSaver()
+        base_path = base_motion(self.robot, base_start, output[0].values,
+                                obstacles=self.problem.fixed, custom_limits=self.custom_limits)
+        if not base_path:
+            print('Plan fails: base motion in IsValidPick')
+            saved_world.restore()
+            return None
+
         arm_path = [output[1].commands[0].path[i].values for i in range(len(output[1].commands[0].path))]
         self.merged_path.add(actions=['base', 'arm'], paths=[base_path, arm_path],
                              attachments=[None, None])
@@ -192,9 +197,9 @@ class PickPlaceEnvironment(Environment):
         result_saved_world.restore()
         basex, basey, basez = output[0].values
         gripx, gripy, gripz = output[3]
-        return {0: basex, 1: basey, 2: basez, 3: gripx, 4: gripy, 5: gripz}
+        return {'saved_world': saved_world, 0: basex, 1: basey, 2: basez, 3: gripx, 4: gripy, 5: gripz}
 
-    def sample_IsValidPlace(self, state, obj, rng=None):
+    def sample_IsValidPlace(self, state, obj, rng=None, pre_saved_world=None):
         """Sample values for continuous arguments of IsValidPick.
         Return dict from predicate argument index to value.
         """
@@ -204,24 +209,32 @@ class PickPlaceEnvironment(Environment):
         collision_objs = self.problem.fixed + movable_obstacles
         self.ik_ir_fn = get_ik_ir_gen(self.problem, custom_limits=self.custom_limits, collision_objs=collision_objs)
 
-        saved_world = WorldSaver()
+        if not pre_saved_world: saved_world = WorldSaver()
+        else:
+            saved_world = pre_saved_world
+            saved_world.restore()
+
         base_start = get_joint_positions(self.robot, joints_from_names(self.robot, PR2_GROUPS['base']))
         placement_gen = self.placement_gen_fn(self._objs_to_obj_ids[obj], self.stove)
         grasps = list(self.grasp_gen_fn(self._objs_to_obj_ids[obj]))
 
-        for i in range(self._num_sample_trials):
+        saved_world.restore()
+        (p,) = next(placement_gen)
+        (g,) = random.choice(grasps)
+        self.attachment = g.get_attachment(self.robot, self.arm)
+        output = next(self.ik_ir_fn(self.arm, self._objs_to_obj_ids[obj], p, g), None)
+        if not output:
+            print('Plan fails: place in IsValidPlace')
             saved_world.restore()
-            (p,) = next(placement_gen)
-            (g,) = random.choice(grasps)
-            output = next(self.ik_ir_fn(self.arm, self._objs_to_obj_ids[obj], p, g), None)
-            if not output:
-                self._error_msg(i, 'IsValidPlace')
-                continue
-            result_saved_world = WorldSaver()
-            base_path = base_motion(self.robot, base_start, output[0].values, obstacles=self.problem.fixed,
-                                    attachments=[self.attachment], custom_limits=self.custom_limits)
-            if base_path: break
-            self._error_msg(i, 'IsValidPlace')
+            return None
+        result_saved_world = WorldSaver()
+        base_path = base_motion(self.robot, base_start, output[0].values, obstacles=self.problem.fixed,
+                                attachments=[self.attachment], custom_limits=self.custom_limits)
+        if not base_path:
+            print('Plan fails: base motion in IsValidPlace')
+            saved_world.restore()
+            return None
+
         arm_path = [output[1].commands[0].path[i].values for i in range(len(output[1].commands[0].path))]
         self.merged_path.add(actions=['base', 'arm'], paths=[base_path, arm_path],
                              attachments=[self.attachment, self.attachment])
@@ -230,12 +243,7 @@ class PickPlaceEnvironment(Environment):
         result_saved_world.restore()
         basex, basey, basez = output[0].values
         gripx, gripy, gripz = output[3]
-        return {0: basex, 1: basey, 2: basez, 3: gripx, 4: gripy, 5: gripz}
-
-    def _error_msg(self, i, msg):
-        if i == self._num_sample_trials - 1:
-            # TODO: appropriately handle this later
-            raise SystemExit('ERROR at {}: Number of samples is not enough to find a path.'.format(msg))
+        return {'saved_world': saved_world, 0: basex, 1: basey, 2: basez, 3: gripx, 4: gripy, 5: gripz}
 
     def _create_problem(self, grasp_type):
         other_arm = get_other_arm(self.arm)
@@ -256,7 +264,7 @@ class PickPlaceEnvironment(Environment):
         displacement = 0
         for i in range(self._num_objs):
             boxes.append(create_box(.07, .05, .15))
-            set_point(boxes[i], (0+displacement, -2+displacement, TABLE_MAX_Z + .15 / 2))
+            set_point(boxes[i], (-.4+displacement, -1.8, TABLE_MAX_Z + .15 / 2))
             displacement += 0.2
 
         self.robot = create_pr2()

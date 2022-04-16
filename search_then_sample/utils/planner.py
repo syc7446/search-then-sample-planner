@@ -84,10 +84,12 @@ class Planner:
                     env, state, node.skeleton, node.constraints,
                     node.lits_sequence, rng_sampler, start_time)
                 if plan is not None:
-                    print("success! expanded {} skeletons (sampled for {}), "
+                    print("Success! expanded {} skeletons (sampled for {}), "
                           "found plan of length {}: {}".format(
                               num_expanded, num_sampling, len(plan), plan))
                     return plan, env.get_merged_path()
+                else:
+                    print('Symbolic plan failed so move onto the next one.')
             else:
                 # Generate successors.
                 for child_node in self._get_successors(node):
@@ -113,9 +115,10 @@ class Planner:
         """Backtracking search over continuous values.
         """
         assert len(skeleton) == len(constraints)
+        num_sample_tries = 0
         cur_idx = 0
         num_tries = [0 for _ in skeleton]
-        num_trials_same_skel_act = 0
+        saved_worlds = [None for _ in skeleton]
         idx_to_max_num_tries = [self._num_samples_per_step \
             if any(v.is_continuous for v in a.variables) \
             else 1 for a in skeleton]
@@ -124,52 +127,54 @@ class Planner:
         while cur_idx < len(skeleton):
             if time.time()-start_time > self._timeout:
                 raise PlanningTimeout("Timed out!")
-            # No hope to resample for the same skeleton action so we give up.
-            if num_trials_same_skel_act > constants.SAMPLER_NUM_TRIALS:
-                return None
             assert num_tries[cur_idx] < idx_to_max_num_tries[cur_idx]
             # Good debug point #2: if you have a skeleton that you think is
             # reasonable, but sampling isn't working, print num_tries here to
             # see at what step the backtracking search is getting stuck.
             num_tries[cur_idx] += 1
-            num_trials_same_skel_act += 1
             state = traj[cur_idx]
             skel_act = skeleton[cur_idx]
             constr_set = constraints[cur_idx]
-            act_args = self._sample_action_args(
-                env, state, skel_act, constr_set, rng)
-            ground_act = skel_act.predicate(*act_args)
-            plan[cur_idx] = ground_act
-            try:
-                traj[cur_idx+1], _, _ = env.simulate(state, ground_act)
-            except EnvironmentFailure as e:
-                print(f"WARNING: env failure in planning: {e.args[0]}")
-                traj[cur_idx+1] = state
-            cur_idx += 1
-            # Check literal sequence constraint. Backtrack if failed.
-            assert len(traj) == len(lits_sequence)
-            lits = env.parse_state(traj[cur_idx])
-            if lits == lits_sequence[cur_idx]:
-                if cur_idx == len(skeleton):  # success!
-                    return plan
-                num_trials_same_skel_act = 0 # reset for the next skeleton action
-                continue  # all good, no need to backtrack
-            # Do backtracking.
-            env.merged_path.delete()
-            cur_idx -= 1
+            act_args, saved_world = self._sample_action_args(env, state, skel_act,
+                                                             constr_set, rng, saved_worlds[cur_idx])
+            num_sample_tries += 1
+            if act_args: # Motion level is feasible
+                saved_worlds[cur_idx] = saved_world
+                ground_act = skel_act.predicate(*act_args)
+                plan[cur_idx] = ground_act
+                try:
+                    traj[cur_idx+1], _, _ = env.simulate(state, ground_act)
+                except EnvironmentFailure as e:
+                    print(f'WARNING: env failure in planning: {e.args[0]}')
+                    traj[cur_idx+1] = state
+                cur_idx += 1
+                # Check literal sequence constraint. Backtrack if failed.
+                assert len(traj) == len(lits_sequence)
+                lits = env.parse_state(traj[cur_idx])
+                if lits == lits_sequence[cur_idx]:
+                    if cur_idx == len(skeleton):  # success!
+                        print(f'Total number of motion planning tries: {num_sample_tries}')
+                        return plan
+                    continue  # all good, no need to backtrack
+                cur_idx -= 1
+
+            # Do backtracking
             while num_tries[cur_idx] == idx_to_max_num_tries[cur_idx]:
                 num_tries[cur_idx] = 0
+                saved_worlds[cur_idx] = None
                 plan[cur_idx] = None
                 traj[cur_idx+1] = None
                 cur_idx -= 1
+                env.merged_path.delete()
                 if cur_idx < 0:
                     return None  # backtracking exhausted
         # Should only get here if the skeleton was empty
         assert not skeleton
+        print(f'Total number of motion planning tries: {num_sample_tries}')
         return plan
 
     @staticmethod
-    def _sample_action_args(env, state, skel_act, constr_set, rng):
+    def _sample_action_args(env, state, skel_act, constr_set, rng, pre_saved_world):
         params_to_samples = {}
         for constr in constr_set:
             # Get & evaluate the sampler for this constraint.
@@ -180,12 +185,19 @@ class Planner:
                 if not var.is_continuous:
                     sampler_args.append(var)
             sampler_args.append(rng)
-            for ind, sample in func(*sampler_args).items():
-                param = constr.variables[ind]
-                assert param.is_continuous
-                if param in params_to_samples:
-                    raise Exception("Multiple samplers for one parameter?!")
-                params_to_samples[param] = sample
+            sampler_args.append(pre_saved_world)
+            try:
+                for ind, sample in func(*sampler_args).items():
+                    if ind == 'saved_world':
+                        cur_saved_world = sample
+                        continue
+                    param = constr.variables[ind]
+                    assert param.is_continuous
+                    if param in params_to_samples:
+                        raise Exception("Multiple samplers for one parameter?!")
+                    params_to_samples[param] = sample
+            except:
+                return [], None
         # Construct arguments for ground action.
         act_args = []
         for var in skel_act.variables:
@@ -197,7 +209,7 @@ class Planner:
                 if var in params_to_samples:
                     raise Exception(f"Unexpected sample for argument {var}")
                 act_args.append(var)
-        return act_args
+        return act_args, cur_saved_world
 
     @staticmethod
     def _static_facts_satisfied(op, static_preds, static_facts):

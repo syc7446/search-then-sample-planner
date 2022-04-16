@@ -351,8 +351,7 @@ def plan_cartesian_motion_legacy(robot, first_joint, target_link, waypoint_poses
     return solutions
 
 
-def storeData(path=None, robot=None, env_name=None, arm=None, grasp_type=None, num_objs=None,
-              num_sample_trials=None, margin_to_walls=None):
+def storeData(path=None, robot=None, env_name=None, arm=None, grasp_type=None, num_objs=None):
     db = {}
     db['path'] = path
     db['robot'] = robot
@@ -360,8 +359,6 @@ def storeData(path=None, robot=None, env_name=None, arm=None, grasp_type=None, n
     db['arm'] = arm
     db['grasp_type'] = grasp_type
     db['num_objs'] = num_objs
-    db['num_sample_trials'] = num_sample_trials
-    db['margin_to_walls'] = margin_to_walls
 
     path = join_paths(get_parent_dir(__file__), os.pardir, '../')
     dbfile = open(path+'/data/save_data_{}'.format(datetime.now()), 'ab')
