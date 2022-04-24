@@ -7,7 +7,7 @@ import search_then_sample.utils.structs as structs
 from search_then_sample.utils.env_base import Environment, EnvironmentFailure
 from search_then_sample.utils.utils import WORLD
 import search_then_sample.utils.constants as constants
-from search_then_sample.utils.search_then_sample_utils import get_ik_ir_gen, base_motion, MergedPath, \
+from search_then_sample.utils.search_then_sample_utils import get_ik_ir_gen, base_motion, SavePath, \
     SAHashable, SINGLE_ROOM
 from pybullet_planning.pybullet_tools.utils import get_pose, get_joint_positions, joints_from_names, is_placement, \
     set_base_values, load_pybullet, create_box, set_point, sample_placement, set_pose, joint_from_name, \
@@ -109,9 +109,10 @@ class PickPlaceEnvironment(Environment):
                 lits.add(pred())
         return lits
 
-    def simulate(self, state, action):
+    def simulate(self, state, action, save_data):
         sa_hashable = SAHashable(state, action, self._world, self._objs)
         if sa_hashable in self._transmodel_cache:
+            print('sa_hashable is in transmodel_cache')
             return self._transmodel_cache[sa_hashable]
         next_state = {k: v.copy() for k, v in state.items()}
 
@@ -128,12 +129,17 @@ class PickPlaceEnvironment(Environment):
         reward = int(self.literal_goal.issubset(hl_next_state))
         done = (reward == 1)
         self._transmodel_cache[sa_hashable] = (next_state, reward, done)
-        return next_state, reward, done
 
-    def initial_pybullet_setup(self, arm, grasp_type):
+        save_data.add_rest(base_states=next_state[self._world]["base_position"],
+                           arm_states=next_state[self._world]["joints"],
+                           obj_states=[next_state[obj]["pose"] for obj in self._objs],
+                           hand_hold=next_state[self._world]["cur_holding_tf"], feasibilities=True)
+        return next_state, reward, done, save_data
+
+    def initial_pybullet_setup(self, arm, grasp_type, save_data):
         self.arm = arm
-        self.problem = self._create_problem(grasp_type)
-        self.merged_path = MergedPath(self.robot, self.arm)
+        self.problem = self._create_problem(grasp_type, save_data)
+        self.save_path = SavePath(self.robot, self.arm)
         self.attachment = None
 
         self.grasp_gen_fn = get_grasp_gen(self.problem, collisions=True)
@@ -150,10 +156,14 @@ class PickPlaceEnvironment(Environment):
         world_state["joints"] = get_joint_positions(self.robot, joints_from_names(self.robot, PR2_GROUPS[self.arm+'_arm']))
         world_state["cur_holding_tf"] = None
         state[self._world] = world_state
-        return state, self.robot
 
-    def get_merged_path(self):
-        return self.merged_path
+        save_data.init(sym_actions='init', base_states=world_state["base_position"],
+                       arm_states=world_state["joints"], obj_states=[state[obj]['pose'] for obj in self._objs],
+                       configs=None, hand_hold=world_state["cur_holding_tf"], feasibilities=None, steps=-1)
+        return state, self.robot, save_data
+
+    def get_save_path(self):
+        return self.save_path
 
     def sample_IsValidPick(self, state, obj, rng=None, pre_saved_world=None):
         """Sample values for continuous arguments of IsValidPick.
@@ -181,23 +191,24 @@ class PickPlaceEnvironment(Environment):
         if not output:
             print('Plan fails: pick in IsValidPick')
             saved_world.restore()
-            return None
+            return g.value
         result_saved_world = WorldSaver()
         base_path = base_motion(self.robot, base_start, output[0].values,
                                 obstacles=self.problem.fixed, custom_limits=self.custom_limits)
         if not base_path:
             print('Plan fails: base motion in IsValidPick')
             saved_world.restore()
-            return None
+            return g.value
 
         arm_path = [output[1].commands[0].path[i].values for i in range(len(output[1].commands[0].path))]
-        self.merged_path.add(actions=['base', 'arm'], paths=[base_path, arm_path],
-                             attachments=[None, None])
+        self.save_path.add(actions=['base', 'arm'], paths=[base_path, arm_path],
+                           attachments=[None, None])
 
         result_saved_world.restore()
         basex, basey, basez = output[0].values
         gripx, gripy, gripz = output[3]
-        return {'saved_world': saved_world, 0: basex, 1: basey, 2: basez, 3: gripx, 4: gripy, 5: gripz}
+        return {'saved_world': saved_world, 'config': g.value,
+                0: basex, 1: basey, 2: basez, 3: gripx, 4: gripy, 5: gripz}
 
     def sample_IsValidPlace(self, state, obj, rng=None, pre_saved_world=None):
         """Sample values for continuous arguments of IsValidPick.
@@ -226,26 +237,27 @@ class PickPlaceEnvironment(Environment):
         if not output:
             print('Plan fails: place in IsValidPlace')
             saved_world.restore()
-            return None
+            return p.value
         result_saved_world = WorldSaver()
         base_path = base_motion(self.robot, base_start, output[0].values, obstacles=self.problem.fixed,
                                 attachments=[self.attachment], custom_limits=self.custom_limits)
         if not base_path:
             print('Plan fails: base motion in IsValidPlace')
             saved_world.restore()
-            return None
+            return p.value
 
         arm_path = [output[1].commands[0].path[i].values for i in range(len(output[1].commands[0].path))]
-        self.merged_path.add(actions=['base', 'arm'], paths=[base_path, arm_path],
-                             attachments=[self.attachment, self.attachment])
+        self.save_path.add(actions=['base', 'arm'], paths=[base_path, arm_path],
+                           attachments=[self.attachment, self.attachment])
         self.attachment = None
 
         result_saved_world.restore()
         basex, basey, basez = output[0].values
         gripx, gripy, gripz = output[3]
-        return {'saved_world': saved_world, 0: basex, 1: basey, 2: basez, 3: gripx, 4: gripy, 5: gripz}
+        return {'saved_world': saved_world, 'config': p.value,
+                0: basex, 1: basey, 2: basez, 3: gripx, 4: gripy, 5: gripz}
 
-    def _create_problem(self, grasp_type):
+    def _create_problem(self, grasp_type, save_data):
         other_arm = get_other_arm(self.arm)
         initial_conf = get_carry_conf(self.arm, grasp_type)
 
@@ -273,6 +285,9 @@ class PickPlaceEnvironment(Environment):
         open_arm(self.robot, self.arm)
         set_arm_conf(self.robot, other_arm, arm_conf(other_arm, REST_LEFT_ARM))
         close_arm(self.robot, other_arm)
+
+        # bottom_aabb = get_aabb(bottom_body, link=bottom_link)
+
         return Problem(robot=self.robot, movable=boxes, arms=[self.arm], grasp_types=[grasp_type],
                        surfaces=[self.table[0], self.stove])
 

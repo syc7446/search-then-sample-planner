@@ -29,28 +29,6 @@ ROOMS = join_paths(MODEL_DIRECTORY, 'rooms.urdf')
 SINGLE_ROOM = join_paths(MODEL_DIRECTORY, 'single_room.urdf')
 
 
-class MergedPath(object):
-    def __init__(self, robot, arm):
-        self._robot = robot
-        self._arm = arm
-
-        self._actions = []
-        self._paths = []
-        self._attachments = []
-
-    def add(self, actions=[], paths=[], attachments=[]):
-        self._actions.append(actions)
-        self._paths.append(paths)
-        self._attachments.append(attachments)
-
-    def delete(self):
-        self._actions.pop()
-        self._paths.pop()
-        self._attachments.pop()
-
-##################################################
-
-
 def base_motion(robot, base_start, base_goal, obstacles=[], attachments=[], custom_limits={}):
     disabled_collisions = get_disabled_collisions(robot)
     base_joints = [joint_from_name(robot, name) for name in PR2_GROUPS['base']]
@@ -351,21 +329,6 @@ def plan_cartesian_motion_legacy(robot, first_joint, target_link, waypoint_poses
     return solutions
 
 
-def storeData(path=None, robot=None, env_name=None, arm=None, grasp_type=None, num_objs=None):
-    db = {}
-    db['path'] = path
-    db['robot'] = robot
-    db['env_name'] = env_name
-    db['arm'] = arm
-    db['grasp_type'] = grasp_type
-    db['num_objs'] = num_objs
-
-    path = join_paths(get_parent_dir(__file__), os.pardir, '../')
-    dbfile = open(path+'/data/save_data_{}'.format(datetime.now()), 'ab')
-    pickle.dump(db, dbfile)
-    dbfile.close()
-
-
 def pause_pybullet(physics_client_id, secs=float("inf")):
     """Pause the simulation at any point so that if you have the viewer
     on, you can look around. Useful for development of environments.
@@ -513,6 +476,110 @@ def get_kinematic_chain(robot_id, end_effector_id, physics_client_id=-1):
             kinematic_chain.append(end_effector_id)
         end_effector_id = joint_info[-1]
     return kinematic_chain
+
+
+def store_path(path=None, robot=None, env_name=None, arm=None, grasp_type=None, num_objs=None):
+    db = {}
+    db['path'] = path
+    db['robot'] = robot
+    db['env_name'] = env_name
+    db['arm'] = arm
+    db['grasp_type'] = grasp_type
+    db['num_objs'] = num_objs
+
+    path = join_paths(get_parent_dir(__file__), os.pardir, '../')
+    dbfile = open(path+'/data/path_{}'.format(datetime.now()), 'ab')
+    pickle.dump(db, dbfile)
+    dbfile.close()
+
+
+def store_date(data):
+    db = {}
+    db['sym_actions'] = data._tot_sym_actions
+    db['base_states'] = data._tot_base_states
+    db['arm_states'] = data._tot_arm_states
+    db['obj_states'] = data._tot_obj_states
+    db['configs'] = data._tot_configs
+    db['hand_hold'] = data._tot_hand_hold
+    db['feasibilities'] = data._tot_feasibilities
+    db['steps'] = data._tot_steps
+
+    path = join_paths(get_parent_dir(__file__), os.pardir, '../')
+    dbfile = open(path + '/data/data_{}'.format(datetime.now()), 'ab')
+    pickle.dump(db, dbfile)
+    dbfile.close()
+
+
+class SaveData(object):
+    def __init__(self):
+        self._tot_sym_actions = []
+        self._tot_base_states = []
+        self._tot_arm_states = []
+        self._tot_obj_states = []
+        self._tot_configs = []
+        self._tot_hand_hold = []
+        self._tot_feasibilities = []
+        self._tot_steps = []
+
+    def init(self, sym_actions, base_states, arm_states, obj_states, configs, hand_hold, feasibilities, steps):
+        self._sym_actions = []
+        self._base_states = []
+        self._arm_states = []
+        self._obj_states = []
+        self._configs = []
+        self._hand_hold = []
+        self._feasibilities = []
+        self._steps = []
+        self._sym_actions.append(sym_actions)
+        self._base_states.append(base_states)
+        self._arm_states.append(arm_states)
+        self._obj_states.append(obj_states)
+        self._configs.append(configs)
+        self._hand_hold.append(hand_hold)
+        self._feasibilities.append(feasibilities)
+        self._steps.append(steps)
+
+    def add_init(self, sym_actions, configs, steps):
+        self._sym_actions.append(sym_actions)
+        self._configs.append(configs)
+        self._steps.append(steps)
+
+    def add_rest(self, base_states, arm_states, obj_states, hand_hold, feasibilities):
+        self._base_states.append(base_states)
+        self._arm_states.append(arm_states)
+        self._obj_states.append(obj_states)
+        self._hand_hold.append(hand_hold)
+        self._feasibilities.append(feasibilities)
+
+    def tot_add(self):
+        self._tot_sym_actions.append(self._sym_actions)
+        self._tot_base_states.append(self._base_states)
+        self._tot_arm_states.append(self._arm_states)
+        self._tot_obj_states.append(self._obj_states)
+        self._tot_configs.append(self._configs)
+        self._tot_hand_hold.append(self._hand_hold)
+        self._tot_feasibilities.append(self._feasibilities)
+        self._tot_steps.append(self._steps)
+
+
+class SavePath(object):
+    def __init__(self, robot, arm):
+        self._robot = robot
+        self._arm = arm
+
+        self._actions = []
+        self._paths = []
+        self._attachments = []
+
+    def add(self, actions=[], paths=[], attachments=[]):
+        self._actions.append(actions)
+        self._paths.append(paths)
+        self._attachments.append(attachments)
+
+    def delete(self):
+        self._actions.pop()
+        self._paths.pop()
+        self._attachments.pop()
 
 
 class SAHashable:
