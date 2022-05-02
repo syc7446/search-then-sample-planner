@@ -29,7 +29,7 @@ print(opt)
 
 
 save_data = SaveData()
-for _ in range(opt.num_probs):
+for i in range(opt.num_probs):
     random.seed(opt.seed)
     np.random.seed(opt.seed)
 
@@ -60,6 +60,7 @@ for _ in range(opt.num_probs):
     del env
     del planner
     disconnect()
+    print('problem {} is solved'.format(i))
 
 if opt.save_data:
     store_date(data=save_data)

@@ -113,7 +113,8 @@ class PickPlaceEnvironment(Environment):
         sa_hashable = SAHashable(state, action, self._world, self._objs)
         if sa_hashable in self._transmodel_cache:
             print('sa_hashable is in transmodel_cache')
-            return self._transmodel_cache[sa_hashable], save_data
+            return self._transmodel_cache[sa_hashable][0], self._transmodel_cache[sa_hashable][1], \
+                   self._transmodel_cache[sa_hashable][2], save_data
         next_state = {k: v.copy() for k, v in state.items()}
 
         if self.attachment:
