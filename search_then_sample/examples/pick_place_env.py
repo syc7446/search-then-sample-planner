@@ -8,7 +8,7 @@ from search_then_sample.utils.env_base import Environment, EnvironmentFailure
 from search_then_sample.utils.utils import WORLD
 import search_then_sample.utils.constants as constants
 from search_then_sample.utils.search_then_sample_utils import get_ik_ir_gen, base_motion, SavePath, \
-    SAHashable, SINGLE_ROOM
+    SINGLE_ROOM
 from pybullet_planning.pybullet_tools.utils import get_pose, get_joint_positions, joints_from_names, is_placement, \
     set_base_values, load_pybullet, create_box, set_point, sample_placement, set_pose, joint_from_name, \
     set_joint_positions, wait_for_duration, TABLE_URDF, WorldSaver, STOVE_URDF
@@ -77,7 +77,6 @@ class PickPlaceEnvironment(Environment):
         for i in range(self._num_objs):
             self._objs.append(self._obj_type("obj{}".format(i)))
         self._objs_to_obj_ids = {}
-        self._transmodel_cache = {}
 
     def parse_state(self, state):
         # Build literal set.
@@ -110,11 +109,6 @@ class PickPlaceEnvironment(Environment):
         return lits
 
     def simulate(self, state, action, save_data):
-        sa_hashable = SAHashable(state, action, self._world, self._objs)
-        if sa_hashable in self._transmodel_cache:
-            print('sa_hashable is in transmodel_cache')
-            return self._transmodel_cache[sa_hashable][0], self._transmodel_cache[sa_hashable][1], \
-                   self._transmodel_cache[sa_hashable][2], save_data
         next_state = {k: v.copy() for k, v in state.items()}
 
         if self.attachment:
@@ -129,7 +123,6 @@ class PickPlaceEnvironment(Environment):
         hl_next_state = self.parse_state(next_state)
         reward = int(self.literal_goal.issubset(hl_next_state))
         done = (reward == 1)
-        self._transmodel_cache[sa_hashable] = (next_state, reward, done)
 
         save_data.add_rest(base_states=next_state[self._world]["base_position"],
                            arm_states=next_state[self._world]["joints"],

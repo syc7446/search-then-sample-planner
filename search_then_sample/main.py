@@ -8,7 +8,7 @@ from search_then_sample.examples.pick_place_env import PickPlaceEnvironment
 from search_then_sample.utils.planner import Planner, PlanningExhausted, PlanningTimeout
 import search_then_sample.utils.ground_truth_ndrs as ground_truth_ndrs
 import search_then_sample.utils.constants as constants
-from search_then_sample.utils.search_then_sample_utils import SaveData, store_path, store_date
+from search_then_sample.utils.search_then_sample_utils import SaveData, store_path, store_data
 from pybullet_planning.pybullet_tools.utils import connect, disconnect, disable_real_time, set_camera_pose, WorldSaver
 
 
@@ -63,4 +63,4 @@ for i in range(opt.num_probs):
     print('problem {} is solved'.format(i))
 
 if opt.save_data:
-    store_date(data=save_data)
+    store_data(data=save_data)

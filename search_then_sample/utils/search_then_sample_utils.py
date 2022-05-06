@@ -493,7 +493,7 @@ def store_path(path=None, robot=None, env_name=None, arm=None, grasp_type=None, 
     dbfile.close()
 
 
-def store_date(data):
+def store_data(data):
     db = {}
     db['sym_actions'] = data._tot_sym_actions
     db['base_states'] = data._tot_base_states
