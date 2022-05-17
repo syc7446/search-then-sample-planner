@@ -5,6 +5,7 @@ import time
 import random
 import numpy as np
 from search_then_sample.examples.pick_place_env import PickPlaceEnvironment
+from search_then_sample.examples.pack_in_shelf_env import PackInShelfEnvironment
 from search_then_sample.utils.planner import Planner, PlanningExhausted, PlanningTimeout
 import search_then_sample.utils.ground_truth_ndrs as ground_truth_ndrs
 import search_then_sample.utils.constants as constants
@@ -13,7 +14,7 @@ from pybullet_planning.pybullet_tools.utils import connect, disconnect, disable_
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--env_name', type=str, default="pickplace")
+parser.add_argument('--env_name', type=str, default="packinshelf") # options: 'pickplace', 'packinshelf'
 parser.add_argument('--seed', type=int, default=0)
 parser.add_argument('--arm', type=str, default='left')
 parser.add_argument('--grasp_type', type=str, default='side')
@@ -33,12 +34,14 @@ for i in range(opt.num_probs):
     random.seed(opt.seed)
     np.random.seed(opt.seed)
 
-    connect(use_gui=opt.use_gui)
+    sim_id = connect(use_gui=opt.use_gui)
     disable_real_time()
     set_camera_pose(camera_point=(-1.0, 0, 3), target_point=(0, 0, 0))
 
     if opt.env_name == "pickplace":
         env = PickPlaceEnvironment(num_objs=opt.num_objs, seed=opt.seed)
+    elif opt.env_name == "packinshelf":
+        env = PackInShelfEnvironment(num_objs=opt.num_objs, sim_id=sim_id, seed=opt.seed)
 
     planner = Planner(seed=opt.seed, timeout=constants.PLANNER_TIMEOUT,
                       heuristic_name="PyperplanHAddHeuristic",

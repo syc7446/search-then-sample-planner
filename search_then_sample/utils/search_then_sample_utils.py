@@ -18,7 +18,8 @@ from pybullet_planning.pybullet_tools.utils import is_placement, multiply, inver
     get_joint_positions, plan_direct_joint_motion, plan_joint_motion, joint_from_name, all_between, BodySaver, \
     LockRenderer, get_bodies, get_joint_limits, set_joint_limits, get_default_resolution, uniform_pose_generator, Saver, \
     PoseSaver, ConfSaver, get_configuration, remove_body, inverse_kinematics_helper, get_movable_joints, get_link_pose, \
-    is_pose_close, elapsed_time, irange, create_sub_robot, get_custom_limits, sub_inverse_kinematics, INF
+    is_pose_close, elapsed_time, irange, create_sub_robot, get_custom_limits, sub_inverse_kinematics, INF, get_box_geometry, \
+    create_shape, create_body, STATIC_MASS, RED, BROWN
 
 
 from pybullet_planning.pybullet_tools.utils import join_paths, get_parent_dir
@@ -476,6 +477,67 @@ def get_kinematic_chain(robot_id, end_effector_id, physics_client_id=-1):
             kinematic_chain.append(end_effector_id)
         end_effector_id = joint_info[-1]
     return kinematic_chain
+
+
+def create_shelf(w, h, d, set_point, sim_id):
+    link_vis = []
+    link_cols = []
+    link_pos = []
+
+    # Left side
+    link_cols.append(p.createCollisionShape(
+        p.GEOM_BOX, halfExtents=[0.01 / 2, d / 2, h / 2],
+        physicsClientId=sim_id))
+    link_vis.append(p.createVisualShape(
+        p.GEOM_BOX, halfExtents=[0.01 / 2, d / 2, h / 2],
+        rgbaColor=(0.6, 0.3, 0.0, 0.5),
+        physicsClientId=sim_id))
+    link_pos.append([set_point[0] - w / 2, set_point[1], set_point[2] + h / 2])
+    # Right side
+    link_cols.append(p.createCollisionShape(
+        p.GEOM_BOX, halfExtents=[0.01 / 2, d / 2, h / 2],
+        physicsClientId=sim_id))
+    link_vis.append(p.createVisualShape(
+        p.GEOM_BOX, halfExtents=[0.01 / 2, d / 2, h / 2],
+        rgbaColor=(0.6, 0.3, 0.0, 0.5),
+        physicsClientId=sim_id))
+    link_pos.append([set_point[0] + w / 2, set_point[1], set_point[2] + h / 2])
+    # Back side
+    link_cols.append(p.createCollisionShape(
+        p.GEOM_BOX, halfExtents=[w / 2, 0.01 / 2, h / 2],
+        physicsClientId=sim_id))
+    link_vis.append(p.createVisualShape(
+        p.GEOM_BOX, halfExtents=[w / 2, 0.01 / 2, h / 2],
+        rgbaColor=(0.6, 0.3, 0.0, 0.5),
+        physicsClientId=sim_id))
+    link_pos.append([set_point[0], set_point[1] + d / 2, set_point[2] + h / 2])
+    # Top side
+    link_cols.append(p.createCollisionShape(
+        p.GEOM_BOX, halfExtents=[w / 2, d / 2, 0.01 / 2],
+        physicsClientId=sim_id))
+    link_vis.append(p.createVisualShape(
+        p.GEOM_BOX, halfExtents=[w / 2, d / 2, 0.01 / 2],
+        rgbaColor=(0.6, 0.3, 0.0, 0.5),
+        physicsClientId=sim_id))
+    link_pos.append([set_point[0], set_point[1], set_point[2] + h])
+
+    return p.createMultiBody(
+        linkMasses=[10 for _ in link_pos],
+        linkCollisionShapeIndices=link_cols,
+        linkVisualShapeIndices=link_vis,
+        linkPositions=link_pos,
+        linkOrientations=[[0, 0, 0, 1] for _ in link_pos],
+        linkInertialFramePositions=[[0, 0, 0] for _ in link_pos],
+        linkInertialFrameOrientations=[[0, 0, 0, 1] for _ in link_pos],
+        linkParentIndices=[0 for _ in link_pos],
+        linkJointTypes=[p.JOINT_FIXED for _ in link_pos],
+        linkJointAxis=[[0, 0, 0] for _ in link_pos],
+        physicsClientId=sim_id)
+
+
+def create_shelf_placement(w, l, h, mass=STATIC_MASS, color=RED, **kwargs):
+    collision_id, visual_id = create_shape(get_box_geometry(w, l, h), color=color, **kwargs)
+    return create_body(collision_id, visual_id, mass=mass)
 
 
 def store_path(path=None, robot=None, env_name=None, arm=None, grasp_type=None, num_objs=None):
