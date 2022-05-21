@@ -180,19 +180,20 @@ class PickPlaceEnvironment(Environment):
 
         saved_world.restore()
         (g,) = random.choice(grasps)
-        self.attachment = g.get_attachment(self.robot, self.arm)
-        output = next(self.ik_ir_fn(self.arm, self._objs_to_obj_ids[obj], p, g), None)
+        self.g = g
+        self.attachment = self.g.get_attachment(self.robot, self.arm)
+        output = next(self.ik_ir_fn(self.arm, self._objs_to_obj_ids[obj], p, self.g), None)
         if not output:
             print('Plan fails: pick in IsValidPick')
             saved_world.restore()
-            return g.value
+            return self.g.value
         result_saved_world = WorldSaver()
         base_path = base_motion(self.robot, base_start, output[0].values,
                                 obstacles=self.problem.fixed, custom_limits=self.custom_limits)
         if not base_path:
             print('Plan fails: base motion in IsValidPick')
             saved_world.restore()
-            return g.value
+            return self.g.value
 
         arm_path = [output[1].commands[0].path[i].values for i in range(len(output[1].commands[0].path))]
         self.save_path.add(actions=['base', 'arm'], paths=[base_path, arm_path],
@@ -201,7 +202,7 @@ class PickPlaceEnvironment(Environment):
         result_saved_world.restore()
         basex, basey, basez = output[0].values
         gripx, gripy, gripz = output[3]
-        return {'saved_world': saved_world, 'config': g.value,
+        return {'saved_world': saved_world, 'config': self.g.value,
                 0: basex, 1: basey, 2: basez, 3: gripx, 4: gripy, 5: gripz}
 
     def sample_IsValidPlace(self, state, obj, rng=None, pre_saved_world=None):
@@ -221,13 +222,10 @@ class PickPlaceEnvironment(Environment):
 
         base_start = get_joint_positions(self.robot, joints_from_names(self.robot, PR2_GROUPS['base']))
         placement_gen = self.placement_gen_fn(self._objs_to_obj_ids[obj], self.stove)
-        grasps = list(self.grasp_gen_fn(self._objs_to_obj_ids[obj]))
 
         saved_world.restore()
         (p,) = next(placement_gen)
-        (g,) = random.choice(grasps)
-        self.attachment = g.get_attachment(self.robot, self.arm)
-        output = next(self.ik_ir_fn(self.arm, self._objs_to_obj_ids[obj], p, g), None)
+        output = next(self.ik_ir_fn(self.arm, self._objs_to_obj_ids[obj], p, self.g), None)
         if not output:
             print('Plan fails: place in IsValidPlace')
             saved_world.restore()
