@@ -2,16 +2,19 @@
 """
 
 import os
+import math
 import time
 import pickle
 import numpy as np
 import pybullet as p
+import random
 from itertools import islice, count
 from datetime import datetime, date, time
 
+from pybullet_utils.transformations import quaternion_from_euler, euler_from_quaternion, quaternion_multiply
 from pybullet_planning.pybullet_tools.ikfast.pr2.ik import is_ik_compiled, pr2_inverse_kinematics
 from pybullet_planning.pybullet_tools.pr2_primitives import create_trajectory, iterate_approach_path, Commands, State, \
-    SELF_COLLISIONS, Conf
+    SELF_COLLISIONS, Pose, Conf
 from pybullet_planning.pybullet_tools.pr2_utils import get_gripper_link, get_arm_joints, arm_conf, open_arm, get_aabb, \
     get_disabled_collisions, get_group_joints, learned_pose_generator, PR2_GROUPS
 from pybullet_planning.pybullet_tools.utils import is_placement, multiply, invert, set_joint_positions, pairwise_collision, \
@@ -19,31 +22,43 @@ from pybullet_planning.pybullet_tools.utils import is_placement, multiply, inver
     LockRenderer, get_bodies, get_joint_limits, set_joint_limits, get_default_resolution, uniform_pose_generator, Saver, \
     PoseSaver, ConfSaver, get_configuration, remove_body, inverse_kinematics_helper, get_movable_joints, get_link_pose, \
     is_pose_close, elapsed_time, irange, create_sub_robot, get_custom_limits, sub_inverse_kinematics, INF, get_box_geometry, \
-    create_shape, create_body, STATIC_MASS, RED, BROWN
+    create_shape, create_body, sample_placement, get_pose, get_euler, STATIC_MASS, RED, BROWN, join_paths, get_parent_dir
 
 
-from pybullet_planning.pybullet_tools.utils import join_paths, get_parent_dir
 MODEL_DIRECTORY = join_paths(get_parent_dir(__file__), os.pardir, '../pybullet_planning/models/')
 ROOM_FLOOR = join_paths(MODEL_DIRECTORY, 'room_floor.urdf')
 SHORT_FLOOR = join_paths(MODEL_DIRECTORY, 'short_floor.urdf')
 ROOMS = join_paths(MODEL_DIRECTORY, 'rooms.urdf')
 SINGLE_ROOM = join_paths(MODEL_DIRECTORY, 'single_room.urdf')
+SINGLE_BIG_ROOM = join_paths(MODEL_DIRECTORY, 'single_big_room.urdf')
+SINGLE_SMALL_ROOM = join_paths(MODEL_DIRECTORY, 'single_small_room.urdf')
+NARROW_TABLE = join_paths(MODEL_DIRECTORY, 'narrow_table.urdf')
 
 
-def base_motion(robot, base_start, base_goal, obstacles=[], attachments=[], custom_limits={}):
+def base_motion(robot, base_start, base_goal, teleport=False, obstacles=[], attachments=[], custom_limits={}):
     disabled_collisions = get_disabled_collisions(robot)
     base_joints = [joint_from_name(robot, name) for name in PR2_GROUPS['base']]
     set_joint_positions(robot, base_joints, base_start)
     base_goal = base_goal[:len(base_joints)]
     # TODO: hardcoded values to increase resolutions used in extension fn
-    resolutions = np.array([2*get_default_resolution(robot, 2), 2*get_default_resolution(robot, 2),
-                            get_default_resolution(robot, 2)])
-    with LockRenderer(lock=False):
-        base_path = plan_joint_motion(robot, base_joints, base_goal, obstacles=obstacles,
-                                      attachments=attachments, disabled_collisions=disabled_collisions,
-                                      resolutions=resolutions, custom_limits=custom_limits)
-    if not base_path: set_joint_positions(robot, base_joints, base_start)
-    return base_path
+
+    if teleport:
+        set_joint_positions(robot, base_joints, base_start)
+        if any(pairwise_collision(robot, b) for b in obstacles):
+            return None
+        set_joint_positions(robot, base_joints, base_goal)
+        if any(pairwise_collision(robot, b) for b in obstacles):
+            return None
+        return [base_start, base_goal]
+    else:
+        resolutions = np.array([2*get_default_resolution(robot, 2), 2*get_default_resolution(robot, 2),
+                                get_default_resolution(robot, 2)])
+        with LockRenderer(lock=False):
+            base_path = plan_joint_motion(robot, base_joints, base_goal, obstacles=obstacles,
+                                          attachments=attachments, disabled_collisions=disabled_collisions,
+                                          resolutions=resolutions, custom_limits=custom_limits)
+        if not base_path: set_joint_positions(robot, base_joints, base_start)
+        return base_path
 
 
 def get_ir_sampler(problem, custom_limits={}, max_attempts=25, collisions=True, collision_objs=[], learned=True):
@@ -231,6 +246,93 @@ def get_ik_ir_gen(problem, max_attempts=25, learned=True, teleport=False, **kwar
     return gen
 
 
+def get_ik_skip_ir_gen(problem, shelf, reachable_point, max_attempts=25, learned=True, teleport=False, **kwargs):
+    # TODO: compose using general fn
+    robot = problem.robot
+    ik_fn = get_ik_fn(problem, teleport=teleport, **kwargs)
+    def gen(*inputs):
+        b, a, p, g = inputs
+        attempts = 0
+        while True:
+            if max_attempts <= attempts:
+                if not p.init:
+                    return
+                attempts = 0
+                yield None
+            attempts += 1
+            try:
+                base_joints = get_group_joints(robot, 'base')
+                base_conf = get_goal_position(get_pose(shelf)[0][:2],
+                                              get_euler(shelf)[-1] + 1.57,
+                                              reachable_point) # TODO: hard-coded rotation value (1.57: 90 degree rotation)
+                ir_outputs = (Conf(robot, base_joints, base_conf),)
+            except StopIteration:
+                return
+            if ir_outputs is None:
+                continue
+            ik_outputs = ik_fn(*(inputs + ir_outputs))
+            if ik_outputs is None:
+                continue
+            print('IK attempts:', attempts)
+            yield ir_outputs + ik_outputs
+            return
+            #if not p.init:
+            #    return
+    return gen
+
+
+def get_namo_rp_gen(fixed_obstacles, collisions=True, **kwargs):
+    # This generator is for reachable pose of the robot to place an object (pr is reachable placement)
+    obstacles = fixed_obstacles if collisions else []
+
+    def gen(body, surface):
+        # TODO: surface poses are being sampled in pr2_belief
+        surfaces = [surface]
+        while True:
+            surface = random.choice(surfaces)  # TODO: weight by area
+            body_pose = sample_placement(body, surface, **kwargs)
+            if body_pose is None:
+                break
+            p = Pose(body, body_pose, surface)
+            p.assign()
+            if not any(pairwise_collision(body, obst) for obst in obstacles if obst not in {body, surface}):
+                yield (p,)
+
+    # TODO: apply the acceleration technique here
+    return gen
+
+
+def get_goal_position(translate, rotate, reachable_point):
+    tform = np.array([[math.cos(rotate), -math.sin(rotate), translate[0]],
+                      [math.sin(rotate), math.cos(rotate), translate[1]],
+                      [0, 0, 1]])
+    reachable_point = [list(reachable_point)]
+    reachable_point[0][-1] = 1.0
+    return tuple(np.squeeze(tform @ np.transpose(np.array(reachable_point))))[:2]+(rotate,)
+
+
+def is_box_on_placement(body, surface):
+    if get_aabb(surface).lower[0] < get_aabb(body).lower[0] and get_aabb(surface).lower[1] < get_aabb(body).lower[1] and \
+        get_aabb(surface).upper[0] > get_aabb(body).upper[0] and get_aabb(surface).upper[1] > get_aabb(body).upper[1]:
+        return True
+    else:
+        return False
+
+
+def choose_grasps(placement_pose, grasps): # TODO: hacked to always choose the grasp towards the same direction
+    for i in range(len(grasps)):
+        rotate = math.degrees(euler_from_quaternion(multiply(placement_pose.value, invert(grasps[i][0].value))[-1])[-1])
+        if rotate > 45 and rotate < 135:
+            return grasps[i]
+
+
+def is_numerical_equal_two_tuples(tuple1, tuple2, precision):
+    for i in range(len(tuple1)):
+        if round(tuple1[i], precision) != round(tuple2[i], precision):
+            return False
+    return True
+
+
 def get_custom_limits_legacy(robot, room_floors, target=None):
     if isinstance(room_floors, int):
         limits = get_aabb(room_floors)
@@ -407,6 +509,7 @@ def inverse_kinematics(body_id, end_effector_id, target_position,
 
     return joint_poses
 
+
 def get_joint_ranges(body_id, joint_indices, physics_client_id=-1):
     """
     Parameters
@@ -452,6 +555,7 @@ def get_joint_ranges(body_id, joint_indices, physics_client_id=-1):
 
     return lower_limits, upper_limits, joint_ranges, rest_poses
 
+
 def get_kinematic_chain(robot_id, end_effector_id, physics_client_id=-1):
     """
     Get all of the free joints from robot base to end effector.
@@ -479,26 +583,26 @@ def get_kinematic_chain(robot_id, end_effector_id, physics_client_id=-1):
     return kinematic_chain
 
 
-def create_shelf(w, h, d, set_point, sim_id):
+def create_shelf(w, l, h, set_point, sim_id):
     link_vis = []
     link_cols = []
     link_pos = []
 
     # Left side
     link_cols.append(p.createCollisionShape(
-        p.GEOM_BOX, halfExtents=[0.01 / 2, d / 2, h / 2],
+        p.GEOM_BOX, halfExtents=[0.01 / 2, l / 2, h / 2],
         physicsClientId=sim_id))
     link_vis.append(p.createVisualShape(
-        p.GEOM_BOX, halfExtents=[0.01 / 2, d / 2, h / 2],
+        p.GEOM_BOX, halfExtents=[0.01 / 2, l / 2, h / 2],
         rgbaColor=(0.6, 0.3, 0.0, 0.5),
         physicsClientId=sim_id))
     link_pos.append([set_point[0] - w / 2, set_point[1], set_point[2] + h / 2])
     # Right side
     link_cols.append(p.createCollisionShape(
-        p.GEOM_BOX, halfExtents=[0.01 / 2, d / 2, h / 2],
+        p.GEOM_BOX, halfExtents=[0.01 / 2, l / 2, h / 2],
         physicsClientId=sim_id))
     link_vis.append(p.createVisualShape(
-        p.GEOM_BOX, halfExtents=[0.01 / 2, d / 2, h / 2],
+        p.GEOM_BOX, halfExtents=[0.01 / 2, l / 2, h / 2],
         rgbaColor=(0.6, 0.3, 0.0, 0.5),
         physicsClientId=sim_id))
     link_pos.append([set_point[0] + w / 2, set_point[1], set_point[2] + h / 2])
@@ -510,13 +614,13 @@ def create_shelf(w, h, d, set_point, sim_id):
         p.GEOM_BOX, halfExtents=[w / 2, 0.01 / 2, h / 2],
         rgbaColor=(0.6, 0.3, 0.0, 0.5),
         physicsClientId=sim_id))
-    link_pos.append([set_point[0], set_point[1] + d / 2, set_point[2] + h / 2])
+    link_pos.append([set_point[0], set_point[1] + l / 2, set_point[2] + h / 2])
     # Top side
     link_cols.append(p.createCollisionShape(
-        p.GEOM_BOX, halfExtents=[w / 2, d / 2, 0.01 / 2],
+        p.GEOM_BOX, halfExtents=[w / 2, l / 2, 0.01 / 2],
         physicsClientId=sim_id))
     link_vis.append(p.createVisualShape(
-        p.GEOM_BOX, halfExtents=[w / 2, d / 2, 0.01 / 2],
+        p.GEOM_BOX, halfExtents=[w / 2, l / 2, 0.01 / 2],
         rgbaColor=(0.6, 0.3, 0.0, 0.5),
         physicsClientId=sim_id))
     link_pos.append([set_point[0], set_point[1], set_point[2] + h])

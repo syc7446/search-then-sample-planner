@@ -6,19 +6,21 @@ import random
 import numpy as np
 from search_then_sample.examples.pick_place_env import PickPlaceEnvironment
 from search_then_sample.examples.pack_in_shelf_env import PackInShelfEnvironment
+from search_then_sample.examples.namo_env import NAMOEnvironment
 from search_then_sample.utils.planner import Planner, PlanningExhausted, PlanningTimeout
 import search_then_sample.utils.ground_truth_ndrs as ground_truth_ndrs
 import search_then_sample.utils.constants as constants
 from search_then_sample.utils.search_then_sample_utils import SaveData, store_path, store_data
+from search_then_sample.train.constants import PACKING_CAMERA_POINT, PACKING_TARGET_POINT, NAMO_CAMERA_POINT, NAMO_TARGET_POINT
 from pybullet_planning.pybullet_tools.utils import connect, disconnect, disable_real_time, set_camera_pose, WorldSaver
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--env_name', type=str, default="packinshelf") # options: 'pickplace', 'packinshelf'
+parser.add_argument('--env_name', type=str, default="packinshelf") # options: 'pickplace', 'packinshelf', 'namo'
 parser.add_argument('--seed', type=int, default=0)
 parser.add_argument('--arm', type=str, default='left')
 parser.add_argument('--grasp_type', type=str, default='side')
-parser.add_argument('--num_objs', type=int, default=2, help='number of movable objects')
+parser.add_argument('--num_objs', type=int, default=10, help='number of movable objects')
 parser.add_argument('--num_samples_per_step', type=int, default=10)
 parser.add_argument('--num_probs', type=int, default=1, help='number of problems to solve to gather data')
 parser.add_argument('--use_gui', action='store_true')
@@ -36,12 +38,16 @@ for i in range(opt.num_probs):
 
     sim_id = connect(use_gui=opt.use_gui)
     disable_real_time()
-    set_camera_pose(camera_point=(-1.0, 0, 3), target_point=(0, 0, 0))
 
     if opt.env_name == "pickplace":
+        set_camera_pose(camera_point=PACKING_CAMERA_POINT, target_point=PACKING_TARGET_POINT)
         env = PickPlaceEnvironment(num_objs=opt.num_objs, seed=opt.seed)
     elif opt.env_name == "packinshelf":
+        set_camera_pose(camera_point=PACKING_CAMERA_POINT, target_point=PACKING_TARGET_POINT)
         env = PackInShelfEnvironment(num_objs=opt.num_objs, sim_id=sim_id, seed=opt.seed)
+    elif opt.env_name == "namo":
+        set_camera_pose(camera_point=NAMO_CAMERA_POINT, target_point=NAMO_TARGET_POINT)
+        env = NAMOEnvironment(num_objs=opt.num_objs, sim_id=sim_id, seed=opt.seed)
 
     planner = Planner(seed=opt.seed, timeout=constants.PLANNER_TIMEOUT,
                       heuristic_name="PyperplanHAddHeuristic",

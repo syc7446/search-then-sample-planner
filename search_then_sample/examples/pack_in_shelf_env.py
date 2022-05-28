@@ -2,17 +2,20 @@ import numpy as np
 import pybullet as p
 import random
 import copy
+import math
 
 import search_then_sample.utils.structs as structs
 from search_then_sample.utils.env_base import Environment, EnvironmentFailure
 from search_then_sample.utils.utils import WORLD
 import search_then_sample.utils.constants as constants
 from search_then_sample.utils.search_then_sample_utils import get_ik_ir_gen, base_motion, SavePath, \
-    SINGLE_ROOM, create_shelf, create_shelf_placement
+    SINGLE_ROOM, create_shelf, create_shelf_placement, get_ik_skip_ir_gen, choose_grasps, NARROW_TABLE
+from search_then_sample.train.constants import TABLE_POSE_X, TABLE_POSE_Y, SHELF_LENGTH, SHELF_WIDTH, SHELF_HEIGHT, \
+    SHELF_REACHABLE_MARGIN
 
 from pybullet_planning.pybullet_tools.utils import get_pose, get_joint_positions, joints_from_names, is_placement, \
     set_base_values, load_pybullet, create_box, set_point, sample_placement, set_pose, joint_from_name, \
-    set_joint_positions, wait_for_duration, TABLE_URDF, WorldSaver, STOVE_URDF, BROWN
+    set_joint_positions, wait_for_duration, set_euler, TABLE_URDF, WorldSaver, STOVE_URDF, BROWN
 from pybullet_planning.pybullet_tools.pr2_utils import get_other_arm, get_carry_conf, set_arm_conf, open_arm, PR2_GROUPS, \
     arm_conf, close_arm, REST_LEFT_ARM
 from pybullet_planning.pybullet_tools.pr2_primitives import get_stable_gen, get_grasp_gen, Pose
@@ -42,34 +45,21 @@ class PackInShelfEnvironment(Environment):
     # Predicates
     OnTable = structs.Predicate("OnTable", 1, [_obj_type])
     InShelf = structs.Predicate("InShelf", 1, [_obj_type])
-    Holding = structs.Predicate("Holding", 1, [_obj_type])
-    HoldingSide = structs.Predicate("HoldingSide", 1, [_obj_type])
-    HandEmpty = structs.Predicate("HandEmpty", 0, [])
-    HandFull = structs.Predicate("HandFull", 0, [])
-    IsValidPick = structs.Predicate("IsValidPick", 7,
-                                     [_xbase_type, _ybase_type, _zbase_type,
-                                      _xgrip_type, _ygrip_type, _zgrip_type,
-                                      _obj_type])
-    IsValidPlace = structs.Predicate("IsValidPlace", 7,
-                                    [_xbase_type, _ybase_type, _zbase_type,
-                                     _xgrip_type, _ygrip_type, _zgrip_type,
-                                     _obj_type])
-    _all_predicates = {OnTable, InShelf, Holding, HoldingSide, HandEmpty,
-                       HandFull, IsValidPick, IsValidPlace}
+    IsValidPickPlace = structs.Predicate("IsValidPickPlace", 7,
+                                         [_xbase_type, _ybase_type, _zbase_type,
+                                          _xgrip_type, _ygrip_type, _zgrip_type,
+                                          _obj_type])
+    _all_predicates = {OnTable, InShelf, IsValidPickPlace}
     _all_predicate_names_to_preds = {p.name: p for p in _all_predicates}
     _continuous_predicates = {pred for pred in _all_predicates
                               if any(t.is_continuous for t in pred.var_types)}
 
     # Actions
-    Pick = structs.Predicate("Pick", 7,
+    Pack = structs.Predicate("Pack", 7,
                              [_obj_type,
                               _xbase_type, _ybase_type, _zbase_type,
                               _xgrip_type, _ygrip_type, _zgrip_type])
-    Place = structs.Predicate("Place", 7,
-                             [_obj_type,
-                              _xbase_type, _ybase_type, _zbase_type,
-                              _xgrip_type, _ygrip_type, _zgrip_type])
-    action_predicates = {Pick, Place}
+    action_predicates = {Pack}
 
     def __init__(self, num_objs, sim_id, seed):
         super().__init__(num_objs, seed)
@@ -85,41 +75,24 @@ class PackInShelfEnvironment(Environment):
         # Build literal set.
         lits = set()
         predicate_names = self._all_predicate_names_to_preds.keys()
-        obj_radius = constants.BINS_OBJ_RADIUS
-        if state[self._world]["cur_holding_tf"] is not None:
-            held_obj, top_or_side = state[self._world]["cur_holding_tf"]
-        else:
-            held_obj = None
         for pred_name in predicate_names:
             pred = self._all_predicate_names_to_preds[pred_name]
             for obj in self._objs:
-                obj_pose = state[obj]["pose"]
-                if obj == held_obj:
-                    continue
-                if pred_name == "OnTable" and is_placement(self._objs_to_obj_ids[obj], self.table[0]):
-                    lits.add(pred(obj))
+                if pred_name == "OnTable":
+                    if is_placement(self._objs_to_obj_ids[obj], self.table[0]) or \
+                            is_placement(self._objs_to_obj_ids[obj], self.table[1]):
+                        lits.add(pred(obj))
                 if pred_name == "InShelf" and is_placement(self._objs_to_obj_ids[obj], self.shelf_placement):
                     lits.add(pred(obj))
-            if pred_name == "HoldingSide" and held_obj is not None and \
-               top_or_side == "side":
-                lits.add(pred(held_obj))
-            if pred_name == "Holding" and held_obj is not None:
-                lits.add(pred(held_obj))
-            if pred_name == "HandEmpty" and held_obj is None:
-                lits.add(pred())
-            if pred_name == "HandFull" and held_obj is not None:
-                lits.add(pred())
         return lits
 
     def simulate(self, state, action, save_data):
         next_state = {k: v.copy() for k, v in state.items()}
 
-        if self.attachment:
-            for i, obj in enumerate(self._objs):
-                next_state[obj]["pose"] = get_pose(self.problem.movable[i])[0]+get_pose(self.problem.movable[i])[1]
-                if obj == action.variables[0]:
-                    next_state[self._world]["cur_holding_tf"] = (obj, self.problem.grasp_types[0])
-        else: next_state[self._world]["cur_holding_tf"] = None
+        for i, obj in enumerate(self._objs):
+            next_state[obj]["pose"] = get_pose(self.problem.movable[i])[0]+get_pose(self.problem.movable[i])[1]
+            if obj == action.variables[0]:
+                next_state[self._world]["cur_holding_tf"] = (obj, self.problem.grasp_types[0])
         next_state[self._world]["base_position"] = get_joint_positions(self.robot, joints_from_names(self.robot, PR2_GROUPS['base']))
         next_state[self._world]["joints"] = get_joint_positions(self.robot, joints_from_names(self.robot, PR2_GROUPS[self.arm+'_arm']))
 
@@ -137,7 +110,6 @@ class PackInShelfEnvironment(Environment):
         self.arm = arm
         self.problem = self._create_problem(grasp_type, save_data)
         self.save_path = SavePath(self.robot, self.arm)
-        self.attachment = None
 
         self.grasp_gen_fn = get_grasp_gen(self.problem, collisions=True)
         self.placement_gen_fn = get_stable_gen(self.problem)
@@ -162,96 +134,74 @@ class PackInShelfEnvironment(Environment):
     def get_save_path(self):
         return self.save_path
 
-    def sample_IsValidPick(self, state, obj, rng=None, pre_saved_world=None):
+    def sample_IsValidPickPlace(self, state, obj, rng=None, pre_saved_world=None):
         """Sample values for continuous arguments of IsValidPick.
         Return dict from predicate argument index to value.
         """
-        print('===Sampling in IsValidPick===')
+        print('===Sampling in IsValidPickPlace===')
         movable_obstacles = copy.deepcopy(self.problem.movable)
         movable_obstacles.remove(self._objs_to_obj_ids[obj])
         collision_objs = self.problem.fixed + movable_obstacles
-        self.ik_ir_fn = get_ik_ir_gen(self.problem, custom_limits=self.custom_limits, collision_objs=collision_objs)
+        obj_pose = Pose(self._objs_to_obj_ids[obj])
+        ik_ir_fn = get_ik_ir_gen(self.problem,
+                                 max_attempts=100, teleport=True,
+                                 custom_limits=self.custom_limits, collision_objs=collision_objs)
 
         if not pre_saved_world: saved_world = WorldSaver()
         else:
             saved_world = pre_saved_world
             saved_world.restore()
-
         base_start = get_joint_positions(self.robot, joints_from_names(self.robot, PR2_GROUPS['base']))
-        p = Pose(self._objs_to_obj_ids[obj])
-        grasps = list(self.grasp_gen_fn(self._objs_to_obj_ids[obj]))
 
-        saved_world.restore()
-        (g,) = random.choice(grasps)
-        self.attachment = g.get_attachment(self.robot, self.arm)
-        output = next(self.ik_ir_fn(self.arm, self._objs_to_obj_ids[obj], p, g), None)
-        if not output:
-            print('Plan fails: pick in IsValidPick')
-            saved_world.restore()
-            return g.value
-        result_saved_world = WorldSaver()
-        base_path = base_motion(self.robot, base_start, output[0].values,
-                                obstacles=self.problem.fixed, custom_limits=self.custom_limits)
-        if not base_path:
-            print('Plan fails: base motion in IsValidPick')
-            saved_world.restore()
-            return g.value
-
-        arm_path = [output[1].commands[0].path[i].values for i in range(len(output[1].commands[0].path))]
-        self.save_path.add(actions=['base', 'arm'], paths=[base_path, arm_path],
-                           attachments=[None, None])
-
-        result_saved_world.restore()
-        basex, basey, basez = output[0].values
-        gripx, gripy, gripz = output[3]
-        return {'saved_world': saved_world, 'config': g.value,
-                0: basex, 1: basey, 2: basez, 3: gripx, 4: gripy, 5: gripz}
-
-    def sample_IsValidPlace(self, state, obj, rng=None, pre_saved_world=None):
-        """Sample values for continuous arguments of IsValidPick.
-        Return dict from predicate argument index to value.
-        """
-        print('===Sampling in IsValidPlace===')
-        movable_obstacles = copy.deepcopy(self.problem.movable)
-        movable_obstacles.remove(self._objs_to_obj_ids[obj])
-        collision_objs = self.problem.fixed + movable_obstacles
-        self.ik_ir_fn = get_ik_ir_gen(self.problem, custom_limits=self.custom_limits, collision_objs=collision_objs)
-
-        if not pre_saved_world: saved_world = WorldSaver()
-        else:
-            saved_world = pre_saved_world
-            saved_world.restore()
-
-        base_start = get_joint_positions(self.robot, joints_from_names(self.robot, PR2_GROUPS['base']))
+        # Place
         placement_gen = self.placement_gen_fn(self._objs_to_obj_ids[obj], self.shelf_placement)
         grasps = list(self.grasp_gen_fn(self._objs_to_obj_ids[obj]))
 
-        saved_world.restore()
         (p,) = next(placement_gen)
-        (g,) = random.choice(grasps)
-        self.attachment = g.get_attachment(self.robot, self.arm)
-        output = next(self.ik_ir_fn(self.arm, self._objs_to_obj_ids[obj], p, g), None)
-        if not output:
-            print('Plan fails: place in IsValidPlace')
+        (g,) = choose_grasps(p, grasps) # TODO: hacked # random.choice(grasps)
+        attachment = g.get_attachment(self.robot, self.arm)
+        place_output = next(ik_ir_fn(self.arm, self._objs_to_obj_ids[obj], p, g), None)
+        if not place_output:
+            print('Plan fails: place in IsValidPickPlace')
             saved_world.restore()
             return p.value
         result_saved_world = WorldSaver()
-        base_path = base_motion(self.robot, base_start, output[0].values, obstacles=self.problem.fixed,
-                                attachments=[self.attachment], custom_limits=self.custom_limits)
-        if not base_path:
-            print('Plan fails: base motion in IsValidPlace')
+
+        # Pick
+        pick_output = next(ik_ir_fn(self.arm, self._objs_to_obj_ids[obj], obj_pose, g), None)
+        if not pick_output:
+            print('Plan fails: pick in IsValidPickPlace')
+            saved_world.restore()
+            return g.value
+
+        # Base motion for pick and place
+        pick_base_path = base_motion(self.robot, base_start, pick_output[0].values, teleport=True,
+                                     obstacles=self.problem.fixed, custom_limits=self.custom_limits)
+        if not pick_base_path:
+            print('Plan fails: base pick motion in IsValidPickPlace')
+            saved_world.restore()
+            return g.value
+        set_joint_positions(self.robot, [0, 1, 2], pick_base_path[-1])
+        base_start = get_joint_positions(self.robot, joints_from_names(self.robot, PR2_GROUPS['base']))
+        place_base_path = base_motion(self.robot, base_start, place_output[0].values,
+                                      teleport=True, obstacles=self.problem.fixed,
+                                      attachments=[attachment], custom_limits=self.custom_limits)
+        if not place_base_path:
+            print('Plan fails: base motion in IsValidPickPlace')
             saved_world.restore()
             return p.value
+        set_joint_positions(self.robot, [0, 1, 2], place_base_path[-1])
 
-        arm_path = [output[1].commands[0].path[i].values for i in range(len(output[1].commands[0].path))]
-        self.save_path.add(actions=['base', 'arm'], paths=[base_path, arm_path],
-                           attachments=[self.attachment, self.attachment])
-        self.attachment = None
+        pick_arm_path = [pick_output[1].commands[0].path[i].values for i in range(len(pick_output[1].commands[0].path))]
+        place_arm_path = [place_output[1].commands[0].path[i].values for i in range(len(place_output[1].commands[0].path))]
+        self.save_path.add(actions=['base', 'arm', 'base', 'arm'],
+                           paths=[pick_base_path, pick_arm_path, place_base_path, place_arm_path],
+                           attachments=[None, None, attachment, attachment])
 
         result_saved_world.restore()
-        basex, basey, basez = output[0].values
-        gripx, gripy, gripz = output[3]
-        return {'saved_world': saved_world, 'config': p.value,
+        basex, basey, basez = place_output[0].values
+        gripx, gripy, gripz = place_output[3]
+        return {'saved_world': result_saved_world, 'config': p.value,
                 0: basex, 1: basey, 2: basez, 3: gripx, 4: gripy, 5: gripz}
 
     def _create_problem(self, grasp_type, save_data):
@@ -263,20 +213,31 @@ class PackInShelfEnvironment(Environment):
         self.custom_limits = {0: (-3., 3.), 1: (-3., 3.)}
 
         self.table = []
+        self.table.append(load_pybullet(NARROW_TABLE))
+        set_point(self.table[0], (-1.2, -1.4, 0))
+        self.table.append(load_pybullet(NARROW_TABLE))
+        set_point(self.table[1], (1.2, -1.4, 0))
         self.table.append(load_pybullet(TABLE_URDF))
-        set_point(self.table[0], (0, -2, 0))
-        self.table.append(load_pybullet(TABLE_URDF))
-        set_point(self.table[1], (0, 2, 0))
-        shelf = create_shelf(w=0.2, h=0.2, d=0.2, set_point=(0.2, 1.8, TABLE_MAX_Z), sim_id=self.sim_id)
-        self.shelf_placement = create_shelf_placement(w=0.2, l=0.2, h=0.01, color=BROWN)
-        set_point(self.shelf_placement, (0.2, 1.8, TABLE_MAX_Z))
+        set_point(self.table[2], (0, 2, 0))
+        self.shelf = create_shelf(w=SHELF_WIDTH, l=SHELF_LENGTH, h=SHELF_HEIGHT,
+                                  set_point=(TABLE_POSE_X, TABLE_POSE_Y, TABLE_MAX_Z), sim_id=self.sim_id)
+        self.shelf_placement = create_shelf_placement(w=SHELF_WIDTH, l=SHELF_LENGTH, h=0.01, color=BROWN)
+        set_point(self.shelf_placement, (TABLE_POSE_X, TABLE_POSE_Y, TABLE_MAX_Z))
+        self.reachable_point = (-SHELF_REACHABLE_MARGIN, 0.0, 0.0)
 
         boxes = []
-        displacement = 0
+        displacement_x = 0
+        displacement_y = 0.1
         for i in range(self._num_objs):
             boxes.append(create_box(.07, .05, .15))
-            set_point(boxes[i], (-.4+displacement, -1.8, TABLE_MAX_Z + .15 / 2))
-            displacement += 0.2
+            if i < 5:
+                set_point(boxes[i], (-1.8 + displacement_x, -1.4 + displacement_y * pow(-1, i), TABLE_MAX_Z + .15 / 2))
+                set_euler(boxes[i], (0, 0, 0))
+                displacement_x += 0.3
+            else:
+                set_point(boxes[i], (-0.9 + displacement_x, -1.4 + displacement_y * pow(-1, i), TABLE_MAX_Z + .15 / 2))
+                set_euler(boxes[i], (0, 0, 0))
+                displacement_x += 0.3
 
         self.robot = create_pr2()
         set_base_values(self.robot, (0, 0, 0))
@@ -293,7 +254,6 @@ class PackInShelfEnvironment(Environment):
     @property
     def literal_goal(self):
         goal = {self.InShelf(self._objs[i]) for i in range(self._num_objs)}
-        goal.add(self.HandEmpty())
         return goal
 
     @property

@@ -135,8 +135,12 @@ class Planner:
             state = traj[cur_idx]
             skel_act = skeleton[cur_idx]
             constr_set = constraints[cur_idx]
-            act_args, saved_world, sampled_config = self._sample_action_args(env, state, skel_act,
-                                                                             constr_set, rng, saved_worlds[cur_idx])
+            if cur_idx > 0:
+                act_args, saved_world, sampled_config = self._sample_action_args(env, state, skel_act,
+                                                                                 constr_set, rng, saved_worlds[cur_idx - 1])
+            else:
+                act_args, saved_world, sampled_config = self._sample_action_args(env, state, skel_act,
+                                                                                 constr_set, rng, None)
             save_data.add_init(sym_actions=skel_act.predicate.__str__(), configs=sampled_config, steps=cur_idx)
             num_sample_tries += 1
             if act_args: # Motion level is feasible
@@ -167,13 +171,15 @@ class Planner:
             # Do backtracking
             while num_tries[cur_idx] == idx_to_max_num_tries[cur_idx]:
                 num_tries[cur_idx] = 0
-                saved_worlds[cur_idx] = None
-                plan[cur_idx] = None
-                traj[cur_idx+1] = None
+                traj[cur_idx] = None
+                if cur_idx > 0:
+                    saved_worlds[cur_idx - 1] = None
+                    plan[cur_idx - 1] = None
                 cur_idx -= 1
-                env.save_path.delete()
                 if cur_idx < 0:
                     return None, save_data  # backtracking exhausted
+                else:
+                    env.save_path.delete()
         # Should only get here if the skeleton was empty
         assert not skeleton
         print(f'Total number of motion planning tries: {num_sample_tries}')
