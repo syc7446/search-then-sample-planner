@@ -1,0 +1,168 @@
+import pickle
+import numpy as np
+import networkx as nx
+from scipy.spatial.transform import Rotation as R
+
+
+np.set_printoptions(precision=2, linewidth=np.inf, suppress=True)
+
+BOX_SIZE = np.array([.07, .05])
+TABLE_POSE_X, TABLE_POSE_Y = 0.0, 1.8
+
+fname = "data_2022_05_28_17_29_44"
+
+
+def get_state_graph(obj_state, init_obj_state):
+    moved_obj = []
+    for obj_state_i, init_obj_state_i in zip(obj_state, init_obj_state):
+        obj_state_i, init_obj_state_i = np.array(obj_state_i), np.array(init_obj_state_i)
+        if np.linalg.norm(obj_state_i - init_obj_state_i) > 1e-5:
+            moved_obj.append(obj_state_i)
+
+    processed_obj = []
+    for obj_state_i in moved_obj:
+        x = obj_state_i[0] - TABLE_POSE_X
+        y = obj_state_i[1] - TABLE_POSE_Y
+        quat = obj_state_i[-4:]
+        z_rot = R.from_quat(quat).as_euler('zyx')[0]
+        processed_obj.append(np.array([x, y, np.cos(z_rot), np.sin(z_rot)]))
+
+    graph = nx.DiGraph()
+    for i, obj_state_i in enumerate(processed_obj):
+        graph.add_node(i, x=obj_state_i)
+
+    for i, obj_state_i in enumerate(processed_obj):
+        for j, obj_state_j in enumerate(processed_obj):
+            if i == j:
+                continue
+            x1, y1, zcos1, zsin1 = obj_state_i
+            x2, y2, zcos2, zsin2 = obj_state_j
+            graph.add_edge(i, j, edge_attr=np.array([x2 - x1, y2 - y1,
+                                                     zcos2 * zcos1 - zsin2 * zsin1,
+                                                     zsin2 * zcos1 - zcos2 * zsin1]))
+    return graph
+
+
+def get_feasibility_likelihood(step, num_remaining_obj, steps, feasibilities):
+    num_feas_at_steps = [0. for _ in range(num_remaining_obj)]
+    num_infeas_at_steps = [0. for _ in range(num_remaining_obj)]
+    for step_i, feas_i in zip(steps, feasibilities):
+        if step_i <= step:
+            break
+        if feas_i:
+            num_feas_at_steps[step_i - step - 1] += 1
+        else:
+            num_infeas_at_steps[step_i - step - 1] += 1
+
+    fl = [num_feas_at_step_i / (num_feas_at_step_i + sum(num_infeas_at_steps[:i + 1]))
+          for i, num_feas_at_step_i in enumerate(num_feas_at_steps)]
+
+    return fl
+
+
+def get_imit_label(step, steps, feasibilities):
+    backjump_step = step
+    for step_i, feas_i in zip(steps, feasibilities):
+        if step_i == step and feas_i:
+            break
+        if step_i < backjump_step:
+            backjump_step = step_i
+    return backjump_step
+
+
+dbfile = open("data/" + fname, "rb")
+db = pickle.load(dbfile)
+
+print_brief = False
+if print_brief:
+    for key in db:
+        print(key, "->", len(db[key]))
+        length = min(10, len(db[key][0]))
+    print()
+
+    for i in range(length):
+        print(i)
+        for key in db:
+            print(key, "->", db[key][0][i])
+        print()
+
+sym_actions = db["sym_actions"]
+base_states = db["base_states"]
+arm_states = db["arm_states"]
+obj_states = db["obj_states"]
+configs = db["configs"]
+hand_holds = db["hand_hold"]
+feasibilities = db["feasibilities"]
+steps = db["steps"]
+
+pfl_states = []
+pfl_obj_infos = []
+pfl_labels = []
+
+imit_state_trajs = []
+imit_obj_infos = []
+imit_labels = []
+
+num_tree = len(sym_actions)
+assert len(sym_actions) == len(base_states) == len(arm_states) == len(obj_states) == len(configs) == len(hand_holds) \
+       == len(feasibilities) == len(steps)
+for i in range(num_tree):
+    imit_obj_state_traj = []
+
+    print(len(sym_actions[i]))
+    print(len(obj_states[i]))
+    print(len(feasibilities[i]))
+    print(len(steps[i]))
+    print()
+    assert len(sym_actions[i]) == len(base_states[i]) == len(arm_states[i]) == len(obj_states[i]) == len(configs[i]) \
+        == len(hand_holds[i]) == len(feasibilities[i]) == len(steps[i])
+
+    tree_len = len(sym_actions[i])
+    init_obj_state = obj_states[i][0]
+    num_obj = len(init_obj_state)
+
+    for j in range(tree_len):
+        obj_state = obj_states[i][j]
+        feasible = feasibilities[i][j]
+        step = steps[i][j]
+
+        # for plan feasibility likelihood data
+        if step >= 0 and feasible:
+            state_graph = get_state_graph(obj_state, init_obj_state)
+            num_remaining_obj = num_obj - step - 1
+            fl = get_feasibility_likelihood(step, num_remaining_obj, steps[i][j + 1:], feasibilities[i][j + 1:])
+            for k, fl_i in enumerate(fl):
+                pfl_states.append(state_graph)
+                pfl_obj_infos.append(np.array([BOX_SIZE] * (k + 1)))
+                pfl_labels.append(fl_i)
+
+        # for imitation learning data
+        if step >= 0:
+            imit_obj_state_traj = imit_obj_state_traj[:step]
+            if feasible:
+                imit_obj_state_traj.append(obj_state)
+            else:
+                imit_label = get_imit_label(step, steps[i][j + 1:], feasibilities[i][j + 1:])
+
+                # can succeed at the same step after a few more trials, which is not what backjumping aims for
+                if imit_label == step:
+                    continue
+                assert imit_label < len(imit_obj_state_traj)
+
+                imit_state_trajs.append([get_state_graph(obj_state_t, init_obj_state)
+                                         for obj_state_t in imit_obj_state_traj])
+                imit_obj_infos.append(BOX_SIZE)
+                imit_labels.append(imit_label)
+
+fname = fname.split(".")[0]
+with open(fname + "_pfl", "wb") as f:
+    pickle.dump({"state_graphs": pfl_states,
+                 "obj_infos": pfl_obj_infos,
+                 "feasibility_likelihood": pfl_labels},
+                f)
+
+with open(fname + "_imit", "wb") as f:
+    pickle.dump({"state_graphs": imit_state_trajs,
+                 "obj_infos": imit_obj_infos,
+                 "imitation_label": imit_labels},
+                f)
