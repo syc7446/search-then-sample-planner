@@ -671,7 +671,7 @@ def store_data(data):
     db['steps'] = data._tot_steps
 
     path = join_paths(get_parent_dir(__file__), os.pardir, '../')
-    dbfile = open(path + '/data/data_{}'.format(datetime.now()), 'ab')
+    dbfile = open(path + '/data/data_{}'.format(datetime.now().strftime("%Y_%m_%d_%H_%M_%S")), 'ab')
     pickle.dump(db, dbfile)
     dbfile.close()
 
