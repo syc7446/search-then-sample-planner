@@ -9,7 +9,7 @@ np.set_printoptions(precision=2, linewidth=np.inf, suppress=True)
 BOX_SIZE = np.array([.07, .05])
 TABLE_POSE_X, TABLE_POSE_Y = 0.0, 1.8
 
-fname = "data_2022_05_28_17_29_44"
+fname = "data_2022_05_30_04_25_44"
 
 
 def get_state_graph(obj_state, init_obj_state):
@@ -25,7 +25,7 @@ def get_state_graph(obj_state, init_obj_state):
         y = obj_state_i[1] - TABLE_POSE_Y
         quat = obj_state_i[-4:]
         z_rot = R.from_quat(quat).as_euler('zyx')[0]
-        processed_obj.append(np.array([x, y, np.cos(z_rot), np.sin(z_rot)]))
+        processed_obj.append(np.array([x, y, np.cos(z_rot), np.sin(z_rot)], dtype=np.float32))
 
     graph = nx.DiGraph()
     for i, obj_state_i in enumerate(processed_obj):
@@ -34,12 +34,13 @@ def get_state_graph(obj_state, init_obj_state):
     for i, obj_state_i in enumerate(processed_obj):
         for j, obj_state_j in enumerate(processed_obj):
             if i == j:
-                continue
+                graph.add_edge(i, j, edge_attr=np.zeros(4, dtype=np.float32))
             x1, y1, zcos1, zsin1 = obj_state_i
             x2, y2, zcos2, zsin2 = obj_state_j
             graph.add_edge(i, j, edge_attr=np.array([x2 - x1, y2 - y1,
                                                      zcos2 * zcos1 - zsin2 * zsin1,
-                                                     zsin2 * zcos1 - zcos2 * zsin1]))
+                                                     zsin2 * zcos1 - zcos2 * zsin1],
+                                                    dtype=np.float32))
     return graph
 
 
@@ -130,11 +131,12 @@ for i in range(num_tree):
         if step >= 0 and feasible:
             state_graph = get_state_graph(obj_state, init_obj_state)
             num_remaining_obj = num_obj - step - 1
+            if num_remaining_obj == 0:
+                continue
             fl = get_feasibility_likelihood(step, num_remaining_obj, steps[i][j + 1:], feasibilities[i][j + 1:])
-            for k, fl_i in enumerate(fl):
-                pfl_states.append(state_graph)
-                pfl_obj_infos.append(np.array([BOX_SIZE] * (k + 1)))
-                pfl_labels.append(fl_i)
+            pfl_states.append(state_graph)
+            pfl_obj_infos.append(np.array([BOX_SIZE] * num_remaining_obj))
+            pfl_labels.append(fl)
 
         # for imitation learning data
         if step >= 0:
