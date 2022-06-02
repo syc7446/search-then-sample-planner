@@ -168,35 +168,38 @@ class PackInShelfEnvironment(Environment):
         result_saved_world = WorldSaver()
 
         # Pick
-        pick_output = next(ik_ir_fn(self.arm, self._objs_to_obj_ids[obj], obj_pose, g), None)
-        if not pick_output:
-            print('Plan fails: pick in IsValidPickPlace')
-            saved_world.restore()
-            return g.value
+        # pick_output = next(ik_ir_fn(self.arm, self._objs_to_obj_ids[obj], obj_pose, g), None)
+        # if not pick_output:
+        #     print('Plan fails: pick in IsValidPickPlace')
+        #     saved_world.restore()
+        #     return g.value
+        #
+        # # Base motion for pick and place
+        # pick_base_path = base_motion(self.robot, base_start, pick_output[0].values, teleport=True,
+        #                              obstacles=self.problem.fixed, custom_limits=self.custom_limits)
+        # if not pick_base_path:
+        #     print('Plan fails: base pick motion in IsValidPickPlace')
+        #     saved_world.restore()
+        #     return g.value
+        # set_joint_positions(self.robot, [0, 1, 2], pick_base_path[-1])
+        # base_start = get_joint_positions(self.robot, joints_from_names(self.robot, PR2_GROUPS['base']))
+        # place_base_path = base_motion(self.robot, base_start, place_output[0].values,
+        #                               teleport=True, obstacles=self.problem.fixed,
+        #                               attachments=[attachment], custom_limits=self.custom_limits)
+        # if not place_base_path:
+        #     print('Plan fails: base motion in IsValidPickPlace')
+        #     saved_world.restore()
+        #     return p.value
+        # set_joint_positions(self.robot, [0, 1, 2], place_base_path[-1])
+        #
+        # pick_arm_path = [pick_output[1].commands[0].path[i].values for i in range(len(pick_output[1].commands[0].path))]
+        # place_arm_path = [place_output[1].commands[0].path[i].values for i in range(len(place_output[1].commands[0].path))]
+        # self.save_path.add(actions=['base', 'arm', 'base', 'arm'],
+        #                    paths=[pick_base_path, pick_arm_path, place_base_path, place_arm_path],
+        #                    attachments=[None, None, attachment, attachment])
 
-        # Base motion for pick and place
-        pick_base_path = base_motion(self.robot, base_start, pick_output[0].values, teleport=True,
-                                     obstacles=self.problem.fixed, custom_limits=self.custom_limits)
-        if not pick_base_path:
-            print('Plan fails: base pick motion in IsValidPickPlace')
-            saved_world.restore()
-            return g.value
-        set_joint_positions(self.robot, [0, 1, 2], pick_base_path[-1])
-        base_start = get_joint_positions(self.robot, joints_from_names(self.robot, PR2_GROUPS['base']))
-        place_base_path = base_motion(self.robot, base_start, place_output[0].values,
-                                      teleport=True, obstacles=self.problem.fixed,
-                                      attachments=[attachment], custom_limits=self.custom_limits)
-        if not place_base_path:
-            print('Plan fails: base motion in IsValidPickPlace')
-            saved_world.restore()
-            return p.value
-        set_joint_positions(self.robot, [0, 1, 2], place_base_path[-1])
-
-        pick_arm_path = [pick_output[1].commands[0].path[i].values for i in range(len(pick_output[1].commands[0].path))]
-        place_arm_path = [place_output[1].commands[0].path[i].values for i in range(len(place_output[1].commands[0].path))]
-        self.save_path.add(actions=['base', 'arm', 'base', 'arm'],
-                           paths=[pick_base_path, pick_arm_path, place_base_path, place_arm_path],
-                           attachments=[None, None, attachment, attachment])
+        # TODO: save_path is temporally not used so remove the below later!
+        self.save_path.add(actions=[], paths=[], attachments=[])
 
         result_saved_world.restore()
         basex, basey, basez = place_output[0].values
