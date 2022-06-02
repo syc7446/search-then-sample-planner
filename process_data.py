@@ -1,7 +1,11 @@
+import os
 import pickle
 import numpy as np
 import networkx as nx
 from scipy.spatial.transform import Rotation as R
+
+from joblib import Parallel, delayed
+from torch_geometric.utils import from_networkx
 
 
 np.set_printoptions(precision=2, linewidth=np.inf, suppress=True)
@@ -9,7 +13,8 @@ np.set_printoptions(precision=2, linewidth=np.inf, suppress=True)
 BOX_SIZE = np.array([.07, .05])
 TABLE_POSE_X, TABLE_POSE_Y = 0.0, 1.8
 
-fname = "data_2022_05_30_04_25_44"
+fname_filter = "data_rand_obj_2022_05_31_21_02_22"
+dirname = "data"
 
 
 def get_state_graph(obj_state, init_obj_state):
@@ -35,13 +40,14 @@ def get_state_graph(obj_state, init_obj_state):
         for j, obj_state_j in enumerate(processed_obj):
             if i == j:
                 graph.add_edge(i, j, edge_attr=np.zeros(4, dtype=np.float32))
+                continue
             x1, y1, zcos1, zsin1 = obj_state_i
             x2, y2, zcos2, zsin2 = obj_state_j
             graph.add_edge(i, j, edge_attr=np.array([x2 - x1, y2 - y1,
-                                                     zcos2 * zcos1 - zsin2 * zsin1,
+                                                     zcos2 * zcos1 + zsin2 * zsin1,
                                                      zsin2 * zcos1 - zcos2 * zsin1],
                                                     dtype=np.float32))
-    return graph
+    return from_networkx(graph)
 
 
 def get_feasibility_likelihood(step, num_remaining_obj, steps, feasibilities):
@@ -71,100 +77,146 @@ def get_imit_label(step, steps, feasibilities):
     return backjump_step
 
 
-dbfile = open("data/" + fname, "rb")
-db = pickle.load(dbfile)
+def post_process_file(fname):
+    print(fname)
+    with open(fname, "rb") as f:
+        db = pickle.load(f)
 
-print_brief = False
-if print_brief:
-    for key in db:
-        print(key, "->", len(db[key]))
-        length = min(10, len(db[key][0]))
-    print()
-
-    for i in range(length):
-        print(i)
+    print_brief = False
+    if print_brief:
         for key in db:
-            print(key, "->", db[key][0][i])
+            print(key, "->", len(db[key]))
+            length = len(db[key][0])
+        print("task steps", [s[-1] for s in db["steps"]])
         print()
 
-sym_actions = db["sym_actions"]
-base_states = db["base_states"]
-arm_states = db["arm_states"]
-obj_states = db["obj_states"]
-configs = db["configs"]
-hand_holds = db["hand_hold"]
-feasibilities = db["feasibilities"]
-steps = db["steps"]
+        # for i in range(length):
+        #     print(i)
+        #     for key in db:
+        #         print(key, "->", db[key][0][i])
+        #     print()
 
-pfl_states = []
-pfl_obj_infos = []
-pfl_labels = []
+    sym_actions = db["sym_actions"]
+    base_states = db["base_states"]
+    arm_states = db["arm_states"]
+    obj_states = db["obj_states"]
+    configs = db["configs"]
+    hand_holds = db["hand_hold"]
+    feasibilities = db["feasibilities"]
+    steps = db["steps"]
 
-imit_state_trajs = []
-imit_obj_infos = []
-imit_labels = []
+    pfl_states = []
+    pfl_obj_infos = []
+    pfl_labels = []
 
-num_tree = len(sym_actions)
-assert len(sym_actions) == len(base_states) == len(arm_states) == len(obj_states) == len(configs) == len(hand_holds) \
-       == len(feasibilities) == len(steps)
-for i in range(num_tree):
-    imit_obj_state_traj = []
+    imit_state_trajs = []
+    imit_obj_infos = []
+    imit_labels = []
 
-    print(len(sym_actions[i]))
-    print(len(obj_states[i]))
-    print(len(feasibilities[i]))
-    print(len(steps[i]))
-    print()
-    assert len(sym_actions[i]) == len(base_states[i]) == len(arm_states[i]) == len(obj_states[i]) == len(configs[i]) \
-        == len(hand_holds[i]) == len(feasibilities[i]) == len(steps[i])
+    num_tree = len(sym_actions)
+    assert len(sym_actions) == len(base_states) == len(arm_states) == len(obj_states) == len(configs) == len(hand_holds) \
+           == len(feasibilities) == len(steps)
+    for i in range(num_tree):
+        imit_obj_state_traj = []
 
-    tree_len = len(sym_actions[i])
-    init_obj_state = obj_states[i][0]
-    num_obj = len(init_obj_state)
+        assert len(sym_actions[i]) == len(base_states[i]) == len(arm_states[i]) == len(obj_states[i]) == len(configs[i]) \
+            == len(hand_holds[i]) == len(feasibilities[i]) == len(steps[i])
 
-    for j in range(tree_len):
-        obj_state = obj_states[i][j]
-        feasible = feasibilities[i][j]
-        step = steps[i][j]
+        tree_len = len(sym_actions[i])
+        init_obj_state = obj_states[i][0]
+        num_obj = len(init_obj_state)
 
-        # for plan feasibility likelihood data
-        if step >= 0 and feasible:
-            state_graph = get_state_graph(obj_state, init_obj_state)
-            num_remaining_obj = num_obj - step - 1
-            if num_remaining_obj == 0:
-                continue
-            fl = get_feasibility_likelihood(step, num_remaining_obj, steps[i][j + 1:], feasibilities[i][j + 1:])
-            pfl_states.append(state_graph)
-            pfl_obj_infos.append(np.array([BOX_SIZE] * num_remaining_obj))
-            pfl_labels.append(fl)
+        for j in range(tree_len):
+            obj_state = obj_states[i][j]
+            feasible = feasibilities[i][j]
+            step = steps[i][j]
 
-        # for imitation learning data
-        if step >= 0:
-            imit_obj_state_traj = imit_obj_state_traj[:step]
-            if feasible:
-                imit_obj_state_traj.append(obj_state)
-            else:
-                imit_label = get_imit_label(step, steps[i][j + 1:], feasibilities[i][j + 1:])
-
-                # can succeed at the same step after a few more trials, which is not what backjumping aims for
-                if imit_label == step:
+            # for plan feasibility likelihood data
+            if step >= 0 and feasible:
+                state_graph = get_state_graph(obj_state, init_obj_state)
+                num_remaining_obj = num_obj - step - 1
+                if num_remaining_obj == 0:
                     continue
-                assert imit_label < len(imit_obj_state_traj)
+                fl = get_feasibility_likelihood(step, num_remaining_obj, steps[i][j + 1:], feasibilities[i][j + 1:])
+                pfl_states.append(state_graph)
+                pfl_obj_infos.append(np.array([BOX_SIZE] * num_remaining_obj))
+                pfl_labels.append(fl)
 
-                imit_state_trajs.append([get_state_graph(obj_state_t, init_obj_state)
-                                         for obj_state_t in imit_obj_state_traj])
-                imit_obj_infos.append(BOX_SIZE)
-                imit_labels.append(imit_label)
+            # for imitation learning data
+            if step >= 0:
+                imit_obj_state_traj = imit_obj_state_traj[:step]
+                if feasible:
+                    imit_obj_state_traj.append(obj_state)
+                else:
+                    imit_label = get_imit_label(step, steps[i][j + 1:], feasibilities[i][j + 1:])
 
-fname = fname.split(".")[0]
-with open(fname + "_pfl", "wb") as f:
-    pickle.dump({"state_graphs": pfl_states,
-                 "obj_infos": pfl_obj_infos,
-                 "feasibility_likelihood": pfl_labels},
-                f)
+                    # can succeed at the same step after a few more trials, which is not what backjumping aims for
+                    if imit_label == step:
+                        continue
+                    assert imit_label < len(imit_obj_state_traj)
 
-with open(fname + "_imit", "wb") as f:
-    pickle.dump({"state_graphs": imit_state_trajs,
-                 "obj_infos": imit_obj_infos,
-                 "imitation_label": imit_labels},
-                f)
+                    imit_state_trajs.append([get_state_graph(obj_state_t, init_obj_state)
+                                             for obj_state_t in imit_obj_state_traj])
+                    imit_obj_infos.append(BOX_SIZE)
+                    imit_labels.append(imit_label)
+
+    data = {"pfl_state_graphs": pfl_states,
+            "pfl_obj_infos": pfl_obj_infos,
+            "feasibility_likelihood": pfl_labels,
+            "imit_state_graphs": imit_state_trajs,
+            "imit_obj_infos": imit_obj_infos,
+            "imitation_label": imit_labels}
+
+    print_data = False
+    if print_data:
+        for i in np.random.randint(len(data["feasibility_likelihood"]), size=5):
+            print(i)
+            for k, v in data.items():
+                print(k)
+                v = v[i]
+                if isinstance(v, nx.DiGraph):
+                    for n in v.nodes(data=True):
+                        print(n)
+                    for e in v.edges(data=True):
+                        print(e)
+                elif isinstance(v, list) and isinstance(v[0], nx.DiGraph):
+                    for v_ in v:
+                        for n in v_.nodes(data=True):
+                            print(n)
+                        for e in v_.edges(data=True):
+                            print(e)
+                        print()
+                else:
+                    print(v)
+            print()
+
+    return data
+
+if __name__ == "__main__":
+    data = {}
+    fnames = [fname for fname in os.listdir(dirname) if fname_filter in fname]
+    filedatas = Parallel(n_jobs=80)(delayed(post_process_file)(os.path.join(dirname, fname))
+                                    for fname in fnames)
+
+    # list of dict to dict of concatenated list
+    for filedata in filedatas:
+        for key in filedata:
+            if key not in data:
+                data[key] = []
+            data[key].extend(filedata[key])
+
+    with open(fname_filter + "_pfl", "wb") as f:
+        print("pfl data points", len(data["feasibility_likelihood"]))
+        pickle.dump({"state_graphs": data["pfl_state_graphs"],
+                     "obj_infos": data["pfl_obj_infos"],
+                     "feasibility_likelihood": data["feasibility_likelihood"]},
+                    f)
+
+    with open(fname_filter + "_imit", "wb") as f:
+        print("imitation data points", len(data["imitation_label"]))
+        pickle.dump({"state_graphs": data["imit_state_graphs"],
+                     "obj_infos": data["imit_obj_infos"],
+                     "imitation_label": data["imitation_label"]},
+                    f)
+
+    print("done!")
