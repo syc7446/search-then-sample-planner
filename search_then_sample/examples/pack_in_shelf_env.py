@@ -143,7 +143,7 @@ class PackInShelfEnvironment(Environment):
         movable_obstacles.remove(self._objs_to_obj_ids[obj])
         collision_objs = self.problem.fixed + movable_obstacles
         ik_ir_fn = get_ik_ir_gen(self.problem,
-                                 max_attempts=100, teleport=True,
+                                 max_attempts=25, teleport=True,
                                  custom_limits=self.custom_limits, collision_objs=collision_objs)
 
         if not pre_saved_world: saved_world = WorldSaver()

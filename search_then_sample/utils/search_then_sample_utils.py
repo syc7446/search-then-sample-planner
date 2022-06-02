@@ -216,7 +216,7 @@ def get_ir_sampler_legacy(problem, custom_limits={}, max_attempts=25, collisions
 
 def get_ik_ir_gen(problem, max_attempts=25, learned=True, teleport=False, **kwargs):
     # TODO: compose using general fn
-    ir_sampler = get_ir_sampler(problem, learned=learned, max_attempts=1, **kwargs)
+    ir_sampler = get_ir_sampler(problem, learned=learned, max_attempts=max_attempts, **kwargs)
     ik_fn = get_ik_fn(problem, teleport=teleport, **kwargs)
     def gen(*inputs):
         b, a, p, g = inputs
