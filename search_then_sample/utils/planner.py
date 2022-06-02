@@ -128,6 +128,7 @@ class Planner:
             if time.time()-start_time > self._timeout:
                 raise PlanningTimeout("Timed out!")
             assert num_tries[cur_idx] < idx_to_max_num_tries[cur_idx]
+            print("Planner at {} step: num trials {}".format(cur_idx, num_tries))
             # Good debug point #2: if you have a skeleton that you think is
             # reasonable, but sampling isn't working, print num_tries here to
             # see at what step the backtracking search is getting stuck.
