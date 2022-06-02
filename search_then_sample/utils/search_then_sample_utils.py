@@ -659,7 +659,7 @@ def store_path(path=None, robot=None, env_name=None, arm=None, grasp_type=None, 
     dbfile.close()
 
 
-def store_data(data):
+def store_data(data, opt):
     db = {}
     db['sym_actions'] = data._tot_sym_actions
     db['base_states'] = data._tot_base_states
@@ -670,8 +670,9 @@ def store_data(data):
     db['feasibilities'] = data._tot_feasibilities
     db['steps'] = data._tot_steps
 
-    path = join_paths(get_parent_dir(__file__), os.pardir, '../')
-    dbfile = open(path + '/data/data_{}'.format(datetime.now().strftime("%Y_%m_%d_%H_%M_%S")), 'ab')
+    path = join_paths(get_parent_dir(__file__), os.pardir, os.pardir, "data")
+    dbfile = open(path + '/data_{}_obj_{}'.format("rand" if opt.generalization else opt.num_objs,
+                                                  datetime.now().strftime("%Y_%m_%d_%H_%M_%S")), 'ab')
     pickle.dump(db, dbfile)
     dbfile.close()
 
