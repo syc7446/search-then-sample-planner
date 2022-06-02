@@ -142,7 +142,6 @@ class PackInShelfEnvironment(Environment):
         movable_obstacles = copy.deepcopy(self.problem.movable)
         movable_obstacles.remove(self._objs_to_obj_ids[obj])
         collision_objs = self.problem.fixed + movable_obstacles
-        obj_pose = Pose(self._objs_to_obj_ids[obj])
         ik_ir_fn = get_ik_ir_gen(self.problem,
                                  max_attempts=100, teleport=True,
                                  custom_limits=self.custom_limits, collision_objs=collision_objs)
@@ -151,6 +150,7 @@ class PackInShelfEnvironment(Environment):
         else:
             saved_world = pre_saved_world
             saved_world.restore()
+        obj_pose = Pose(self._objs_to_obj_ids[obj])
         base_start = get_joint_positions(self.robot, joints_from_names(self.robot, PR2_GROUPS['base']))
 
         # Place
