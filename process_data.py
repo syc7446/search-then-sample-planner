@@ -13,7 +13,8 @@ np.set_printoptions(precision=2, linewidth=np.inf, suppress=True)
 BOX_SIZE = np.array([.07, .05])
 TABLE_POSE_X, TABLE_POSE_Y = 0.0, 1.8
 
-fname_filter = "data_rand_obj_2022_05_31_21_02_22"
+fname_filter = "data_10_obj"
+data_to_prepare = ["pfl_test"]       # "pfl", "imit", "pfl_test"
 dirname = "data"
 
 
@@ -109,6 +110,10 @@ def post_process_file(fname):
     pfl_obj_infos = []
     pfl_labels = []
 
+    pfl_test_state_trajs = []
+    pfl_test_obj_infos = []
+    pfl_test_labels = []
+
     imit_state_trajs = []
     imit_obj_infos = []
     imit_labels = []
@@ -132,7 +137,7 @@ def post_process_file(fname):
             step = steps[i][j]
 
             # for plan feasibility likelihood data
-            if step >= 0 and feasible:
+            if "pfl" in data_to_prepare and step >= 0 and feasible:
                 state_graph = get_state_graph(obj_state, init_obj_state)
                 num_remaining_obj = num_obj - step - 1
                 if num_remaining_obj == 0:
@@ -142,8 +147,8 @@ def post_process_file(fname):
                 pfl_obj_infos.append(np.array([BOX_SIZE] * num_remaining_obj))
                 pfl_labels.append(fl)
 
-            # for imitation learning data
-            if step >= 0:
+            # for imitation learning and plan feasibility likelihood TEST data
+            if step >= 0 and ("pfl_test" in data_to_prepare or "imit" in data_to_prepare):
                 imit_obj_state_traj = imit_obj_state_traj[:step]
                 if feasible:
                     imit_obj_state_traj.append(obj_state)
@@ -155,17 +160,25 @@ def post_process_file(fname):
                         continue
                     assert imit_label < len(imit_obj_state_traj)
 
-                    imit_state_trajs.append([get_state_graph(obj_state_t, init_obj_state)
-                                             for obj_state_t in imit_obj_state_traj])
+                    state_traj = [get_state_graph(obj_state_t, init_obj_state) for obj_state_t in imit_obj_state_traj]
+                    imit_state_trajs.append(state_traj)
                     imit_obj_infos.append(BOX_SIZE)
                     imit_labels.append(imit_label)
+
+                    t = len(state_traj)
+                    pfl_test_state_trajs.append(state_traj)
+                    pfl_test_obj_infos.append([np.array([BOX_SIZE] * (t - k)) for k in range(t)])
+                    pfl_test_labels.append(imit_label)
 
     data = {"pfl_state_graphs": pfl_states,
             "pfl_obj_infos": pfl_obj_infos,
             "feasibility_likelihood": pfl_labels,
             "imit_state_graphs": imit_state_trajs,
             "imit_obj_infos": imit_obj_infos,
-            "imitation_label": imit_labels}
+            "imitation_label": imit_labels,
+            "pfl_test_state_trajs": pfl_test_state_trajs,
+            "pfl_test_obj_infos": pfl_test_obj_infos,
+            "pfl_test_labels": pfl_test_labels}
 
     print_data = False
     if print_data:
@@ -193,11 +206,13 @@ def post_process_file(fname):
     return data
 
 if __name__ == "__main__":
-    data = {}
-    fnames = [fname for fname in os.listdir(dirname) if fname_filter in fname]
-    filedatas = Parallel(n_jobs=80)(delayed(post_process_file)(os.path.join(dirname, fname))
-                                    for fname in fnames)
+    fnames = [os.path.join(dirname, fname)
+              for fname in os.listdir(dirname) if fname_filter in fname]
+    fnames = [fname for fname in fnames if os.path.isfile(fname)]
+    n_jobs = min(len(fnames), 80)
+    filedatas = Parallel(n_jobs=n_jobs)(delayed(post_process_file)(fname) for fname in fnames)
 
+    data = {}
     # list of dict to dict of concatenated list
     for filedata in filedatas:
         for key in filedata:
@@ -205,18 +220,28 @@ if __name__ == "__main__":
                 data[key] = []
             data[key].extend(filedata[key])
 
-    with open(fname_filter + "_pfl", "wb") as f:
-        print("pfl data points", len(data["feasibility_likelihood"]))
-        pickle.dump({"state_graphs": data["pfl_state_graphs"],
-                     "obj_infos": data["pfl_obj_infos"],
-                     "feasibility_likelihood": data["feasibility_likelihood"]},
-                    f)
+    if "pfl" in data_to_prepare:
+        with open(fname_filter + "_pfl", "wb") as f:
+            print("pfl data points", len(data["feasibility_likelihood"]))
+            pickle.dump({"state_graphs": data["pfl_state_graphs"],
+                         "obj_infos": data["pfl_obj_infos"],
+                         "feasibility_likelihood": data["feasibility_likelihood"]},
+                        f)
 
-    with open(fname_filter + "_imit", "wb") as f:
-        print("imitation data points", len(data["imitation_label"]))
-        pickle.dump({"state_graphs": data["imit_state_graphs"],
-                     "obj_infos": data["imit_obj_infos"],
-                     "imitation_label": data["imitation_label"]},
-                    f)
+    if "pfl_test" in data_to_prepare:
+        with open(fname_filter + "_pfl_test", "wb") as f:
+            print("pfl test data points", len(data["pfl_test_state_trajs"]))
+            pickle.dump({"state_graphs": data["pfl_test_state_trajs"],
+                         "obj_infos": data["pfl_test_obj_infos"],
+                         "backjump_label": data["pfl_test_labels"]},
+                        f)
+
+    if "imit" in data_to_prepare:
+        with open(fname_filter + "_imit", "wb") as f:
+            print("imitation data points", len(data["imitation_label"]))
+            pickle.dump({"state_graphs": data["imit_state_graphs"],
+                         "obj_infos": data["imit_obj_infos"],
+                         "imitation_label": data["imitation_label"]},
+                        f)
 
     print("done!")
