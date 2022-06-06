@@ -14,15 +14,14 @@ from search_then_sample.utils.utils import compute_static_preds, compute_delete_
 import search_then_sample.utils.constants as constants
 
 
-class Planner:
+class BacktrackNSPlanner:
     """Definition of planner.
     """
-    def __init__(self, seed, timeout, heuristic_name, num_samples_per_step, num_trials):
+    def __init__(self, seed, timeout, heuristic_name, num_samples_per_step):
         self._seed = seed
         self._timeout = timeout  # in seconds
         self._heuristic_name = heuristic_name  # from planner_heuristics.py
         self._num_samples_per_step = num_samples_per_step
-        self._num_trials = num_trials
         self._num_calls = 0
         self._ground_operators = None  # cache for planning
 
