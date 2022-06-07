@@ -14,14 +14,15 @@ from search_then_sample.utils.utils import compute_static_preds, compute_delete_
 import search_then_sample.utils.constants as constants
 
 
-class BacktrackNewsamplePlanner:
+class BacktrackResamplePlanner:
     """Definition of planner.
     """
-    def __init__(self, seed, timeout, heuristic_name, num_samples_per_step):
+    def __init__(self, seed, timeout, heuristic_name, num_samples_per_step, num_resamples):
         self._seed = seed
         self._timeout = timeout  # in seconds
         self._heuristic_name = heuristic_name  # from planner_heuristics.py
         self._num_samples_per_step = num_samples_per_step
+        self._num_resamples = num_resamples
         self._num_calls = 0
         self._ground_operators = None  # cache for planning
         self._count_motion_prob_solving = 0
@@ -116,79 +117,82 @@ class BacktrackNewsamplePlanner:
     def _sample_continuous_values(self, env, start_state, skeleton,
                                   constraints, lits_sequence, rng, start_time, save_data):
         """Backtracking search over continuous values.
+        In the current resampling implementation,
         """
-        assert len(skeleton) == len(constraints)
-        num_sample_tries = 0
-        cur_idx = 0
-        num_tries = [0 for _ in skeleton]
-        saved_worlds = [None for _ in skeleton]
-        idx_to_max_num_tries = [self._num_samples_per_step \
-            if any(v.is_continuous for v in a.variables) \
-            else 1 for a in skeleton]
-        plan = [None for _ in skeleton]
-        traj = [start_state]+[None for _ in skeleton]
-        while cur_idx < len(skeleton):
-            if time.time()-start_time > self._timeout:
-                raise PlanningTimeout("Timed out!")
-            assert num_tries[cur_idx] < idx_to_max_num_tries[cur_idx]
-            print("Planner at {} step: num trials {}".format(cur_idx, num_tries))
-            # Good debug point #2: if you have a skeleton that you think is
-            # reasonable, but sampling isn't working, print num_tries here to
-            # see at what step the backtracking search is getting stuck.
-            num_tries[cur_idx] += 1
-            state = traj[cur_idx]
-            skel_act = skeleton[cur_idx]
-            constr_set = constraints[cur_idx]
-            if cur_idx > 0:
-                act_args, saved_world, sampled_config = self._sample_action_args(env, state, skel_act,
-                                                                                 constr_set, rng, saved_worlds[cur_idx - 1])
-            else:
-                act_args, saved_world, sampled_config = self._sample_action_args(env, state, skel_act,
-                                                                                 constr_set, rng, self._init_saved_world)
-            self._count_motion_prob_solving += 1
-            save_data.add_init(sym_actions=skel_act.predicate.__str__(), configs=sampled_config, steps=cur_idx)
-            num_sample_tries += 1
-            if act_args: # Motion level is feasible
-                saved_worlds[cur_idx] = saved_world
-                ground_act = skel_act.predicate(*act_args)
-                plan[cur_idx] = ground_act
-                try:
-                    traj[cur_idx+1], _, _, save_data = env.simulate(state, ground_act, save_data)
-                except EnvironmentFailure as e:
-                    print(f'WARNING: env failure in planning: {e.args[0]}')
-                    traj[cur_idx+1] = state
+        for nr in range(self._num_resamples):
+            assert len(skeleton) == len(constraints)
+            num_sample_tries = 0
+            cur_idx = 0
+            num_tries = [0 for _ in skeleton]
+            saved_worlds = [None for _ in skeleton]
+            idx_to_max_num_tries = [self._num_samples_per_step \
+                if any(v.is_continuous for v in a.variables) \
+                else 1 for a in skeleton]
+            plan = [None for _ in skeleton]
+            traj = [start_state]+[None for _ in skeleton]
+            while cur_idx < len(skeleton):
+                if time.time()-start_time > self._timeout:
+                    raise PlanningTimeout("Timed out!")
+                assert num_tries[cur_idx] < idx_to_max_num_tries[cur_idx]
+                print("Planner at {} step: num trials {}".format(cur_idx, num_tries))
+                # Good debug point #2: if you have a skeleton that you think is
+                # reasonable, but sampling isn't working, print num_tries here to
+                # see at what step the backtracking search is getting stuck.
+                num_tries[cur_idx] += 1
+                state = traj[cur_idx]
+                skel_act = skeleton[cur_idx]
+                constr_set = constraints[cur_idx]
+                if cur_idx > 0:
+                    act_args, saved_world, sampled_config = self._sample_action_args(env, state, skel_act,
+                                                                                     constr_set, rng, saved_worlds[cur_idx - 1])
+                else:
+                    act_args, saved_world, sampled_config = self._sample_action_args(env, state, skel_act,
+                                                                                     constr_set, rng, self._init_saved_world)
+                self._count_motion_prob_solving += 1
+                save_data.add_init(sym_actions=skel_act.predicate.__str__(), configs=sampled_config, steps=cur_idx)
+                num_sample_tries += 1
+                if act_args: # Motion level is feasible
+                    saved_worlds[cur_idx] = saved_world
+                    ground_act = skel_act.predicate(*act_args)
+                    plan[cur_idx] = ground_act
+                    try:
+                        traj[cur_idx+1], _, _, save_data = env.simulate(state, ground_act, save_data)
+                    except EnvironmentFailure as e:
+                        print(f'WARNING: env failure in planning: {e.args[0]}')
+                        traj[cur_idx+1] = state
+                        save_data.add_rest(base_states=None, arm_states=None, obj_states=None,
+                                           hand_hold=None, feasibilities=False)
+                    cur_idx += 1
+                    # Check literal sequence constraint. Backtrack if failed.
+                    assert len(traj) == len(lits_sequence)
+                    lits = env.parse_state(traj[cur_idx])
+                    if lits == lits_sequence[cur_idx]:
+                        if cur_idx == len(skeleton):  # success!
+                            print(f'Total number of motion planning tries: {num_sample_tries}')
+                            return plan, save_data
+                        continue  # all good, no need to backtrack
+                    cur_idx -= 1
+                else:
                     save_data.add_rest(base_states=None, arm_states=None, obj_states=None,
                                        hand_hold=None, feasibilities=False)
-                cur_idx += 1
-                # Check literal sequence constraint. Backtrack if failed.
-                assert len(traj) == len(lits_sequence)
-                lits = env.parse_state(traj[cur_idx])
-                if lits == lits_sequence[cur_idx]:
-                    if cur_idx == len(skeleton):  # success!
-                        print(f'Total number of motion planning tries: {num_sample_tries}')
-                        return plan, save_data
-                    continue  # all good, no need to backtrack
-                cur_idx -= 1
-            else:
-                save_data.add_rest(base_states=None, arm_states=None, obj_states=None,
-                                   hand_hold=None, feasibilities=False)
 
-            # Do backtracking
-            while num_tries[cur_idx] == idx_to_max_num_tries[cur_idx]:
-                num_tries[cur_idx] = 0
-                traj[cur_idx] = None
-                if cur_idx > 0:
-                    saved_worlds[cur_idx - 1] = None
-                    plan[cur_idx - 1] = None
-                cur_idx -= 1
-                if cur_idx < 0:
-                    return None, save_data  # backtracking exhausted
-                else:
-                    env.save_path.delete()
-        # Should only get here if the skeleton was empty
-        assert not skeleton
-        print(f'Total number of motion planning tries: {num_sample_tries}')
-        return plan, save_data
+                # Do backtracking
+                while num_tries[cur_idx] == idx_to_max_num_tries[cur_idx]:
+                    num_tries[cur_idx] = 0
+                    traj[cur_idx] = None
+                    if cur_idx > 0:
+                        saved_worlds[cur_idx - 1] = None
+                        plan[cur_idx - 1] = None
+                    cur_idx -= 1
+                    if cur_idx < 0:
+                        if nr == self._num_resamples - 1:
+                            return None, save_data  # backtracking exhausted
+                    else:
+                        env.save_path.delete()
+            # Should only get here if the skeleton was empty
+            assert not skeleton
+            print(f'Total number of motion planning tries: {num_sample_tries}')
+            return plan, save_data
 
     @staticmethod
     def _sample_action_args(env, state, skel_act, constr_set, rng, pre_saved_world):

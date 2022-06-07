@@ -2,6 +2,8 @@
 """
 
 import time
+import torch
+from torch_geometric.data import Batch
 import heapq as hq
 import numpy as np
 from pddlgym.utils import get_object_combinations
@@ -11,10 +13,12 @@ from search_then_sample.utils.structs import Operator
 import search_then_sample.utils.planner_heuristics as planner_heuristics
 from search_then_sample.utils.env_base import EnvironmentFailure
 from search_then_sample.utils.utils import compute_static_preds, compute_delete_relax_reachable_lits
-import search_then_sample.utils.constants as constants
+from culprit_learner.utils.preprocess_data import get_state_graph, BOX_SIZE
+from culprit_learner.model.plan_feasibility import PlanFeasibility
+from culprit_learner.utils.utils import TrainingParams, set_seed_everywhere
 
 
-class BacktrackNewsamplePlanner:
+class BackjumpNewsamplePlanner:
     """Definition of planner.
     """
     def __init__(self, seed, timeout, heuristic_name, num_samples_per_step):
@@ -25,6 +29,7 @@ class BacktrackNewsamplePlanner:
         self._num_calls = 0
         self._ground_operators = None  # cache for planning
         self._count_motion_prob_solving = 0
+        self._obj_state_traj = []   # For backjumping model
 
     def plan(self, env, state, all_ndrs, save_data, saved_world):
         """Return a plan given an env, low-level state, and NDR dictionary.
@@ -55,6 +60,20 @@ class BacktrackNewsamplePlanner:
                 f"Goals {goal_literals - dr_reachable_lits} not reachable")
         heuristic = getattr(planner_heuristics, self._heuristic_name)(
             env, lifted_operators, discrete_objects)
+
+        # For backjumping model
+        self._init_obj_state = [state[env._objs[i]]['pose'] for i in range(len(env._objs))]
+        state_graphs = get_state_graph([tuple([0.0] * 6 + [1.0]) for _ in range(len(self._init_obj_state))], self._init_obj_state)
+        obj_infos = np.array([BOX_SIZE])
+
+        params = TrainingParams(params_fname="/home/yoon/Workspace/search-then-sample-planner/params/backjump_params.json", train=False)
+        self._device = torch.device("cuda:{}".format(params.cuda_id) if torch.cuda.is_available() else "cpu")
+        set_seed_everywhere(self._seed)
+        params.device = self._device
+        params.node_size = state_graphs.x.shape[1]
+        params.edge_size = state_graphs.edge_attr.shape[1]
+        params.obj_info_size = obj_infos.shape[1]
+        self._inference = PlanFeasibility(params)
 
         return self._find_plan(env, state, lits, heuristic, save_data)
 
@@ -115,7 +134,7 @@ class BacktrackNewsamplePlanner:
 
     def _sample_continuous_values(self, env, start_state, skeleton,
                                   constraints, lits_sequence, rng, start_time, save_data):
-        """Backtracking search over continuous values.
+        """Backjumping search over continuous values.
         """
         assert len(skeleton) == len(constraints)
         num_sample_tries = 0
@@ -154,6 +173,7 @@ class BacktrackNewsamplePlanner:
                 plan[cur_idx] = ground_act
                 try:
                     traj[cur_idx+1], _, _, save_data = env.simulate(state, ground_act, save_data)
+                    self._obj_state_traj.append([traj[cur_idx+1][env._objs[i]]['pose'] for i in range(len(env._objs))])
                 except EnvironmentFailure as e:
                     print(f'WARNING: env failure in planning: {e.args[0]}')
                     traj[cur_idx+1] = state
@@ -173,18 +193,27 @@ class BacktrackNewsamplePlanner:
                 save_data.add_rest(base_states=None, arm_states=None, obj_states=None,
                                    hand_hold=None, feasibilities=False)
 
-            # Do backtracking
+            # Do backjumping
             while num_tries[cur_idx] == idx_to_max_num_tries[cur_idx]:
-                num_tries[cur_idx] = 0
-                traj[cur_idx] = None
+                backjump_idx = 0
                 if cur_idx > 0:
-                    saved_worlds[cur_idx - 1] = None
-                    plan[cur_idx - 1] = None
-                cur_idx -= 1
-                if cur_idx < 0:
+                    state_graphs = [get_state_graph(obj_state_t, self._init_obj_state).to(self._device) for obj_state_t in self._obj_state_traj]
+                    obj_infos = [torch.tensor(np.array([BOX_SIZE] * (num_remaining_obj + 1)), dtype=torch.float32, device=self._device)
+                                 for num_remaining_obj in reversed(range(cur_idx))]
+                    state_graphs = Batch.from_data_list(state_graphs)
+                    backjump_idx = self._inference.backjump([state_graphs], [obj_infos])
+
+                for idx in range(backjump_idx + 1, cur_idx + 1):
+                    num_tries[idx] = 0
+                    traj[idx] = None
+                    self._obj_state_traj.pop()
+                    if idx > 0:
+                        saved_worlds[idx - 1] = None
+                        plan[idx - 1] = None
+                        env.save_path.delete()
+                if cur_idx == 0:
                     return None, save_data  # backtracking exhausted
-                else:
-                    env.save_path.delete()
+                cur_idx = backjump_idx
         # Should only get here if the skeleton was empty
         assert not skeleton
         print(f'Total number of motion planning tries: {num_sample_tries}')

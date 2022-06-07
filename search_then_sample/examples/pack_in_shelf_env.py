@@ -1,21 +1,15 @@
-import numpy as np
-import pybullet as p
-import random
 import copy
-import math
 
 import search_then_sample.utils.structs as structs
-from search_then_sample.utils.env_base import Environment, EnvironmentFailure
+from search_then_sample.utils.env_base import Environment
 from search_then_sample.utils.utils import WORLD
-import search_then_sample.utils.constants as constants
-from search_then_sample.utils.search_then_sample_utils import get_ik_ir_gen, base_motion, SavePath, \
-    SINGLE_ROOM, create_shelf, create_shelf_placement, get_ik_skip_ir_gen, choose_grasps, NARROW_TABLE
-from search_then_sample.train.constants import TABLE_POSE_X, TABLE_POSE_Y, SHELF_LENGTH, SHELF_WIDTH, SHELF_HEIGHT, \
+from search_then_sample.utils.search_then_sample_utils import get_ik_ir_gen, SavePath, \
+    SINGLE_ROOM, create_shelf, create_shelf_placement, choose_grasps, NARROW_TABLE
+from search_then_sample.constants import TABLE_POSE_X, TABLE_POSE_Y, SHELF_LENGTH, SHELF_WIDTH, SHELF_HEIGHT, \
     SHELF_REACHABLE_MARGIN
 
 from pybullet_planning.pybullet_tools.utils import get_pose, get_joint_positions, joints_from_names, is_placement, \
-    set_base_values, load_pybullet, create_box, set_point, sample_placement, set_pose, joint_from_name, \
-    set_joint_positions, wait_for_duration, set_euler, TABLE_URDF, WorldSaver, STOVE_URDF, BROWN
+    set_base_values, load_pybullet, create_box, set_point, set_euler, TABLE_URDF, WorldSaver, BROWN
 from pybullet_planning.pybullet_tools.pr2_utils import get_other_arm, get_carry_conf, set_arm_conf, open_arm, PR2_GROUPS, \
     arm_conf, close_arm, REST_LEFT_ARM
 from pybullet_planning.pybullet_tools.pr2_primitives import get_stable_gen, get_grasp_gen, Pose
@@ -129,7 +123,8 @@ class PackInShelfEnvironment(Environment):
         save_data.init(sym_actions='init', base_states=world_state["base_position"],
                        arm_states=world_state["joints"], obj_states=[state[obj]['pose'] for obj in self._objs],
                        configs=None, hand_hold=world_state["cur_holding_tf"], feasibilities=None, steps=-1)
-        return state, self.robot, save_data
+        saved_world = WorldSaver()
+        return state, self.robot, save_data, saved_world
 
     def get_save_path(self):
         return self.save_path

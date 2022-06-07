@@ -1,28 +1,19 @@
-import numpy as np
-import pybullet as p
-import random
-import copy
-
 import search_then_sample.utils.structs as structs
-from search_then_sample.utils.env_base import Environment, EnvironmentFailure
+from search_then_sample.utils.env_base import Environment
 from search_then_sample.utils.utils import WORLD
-import search_then_sample.utils.constants as constants
-from search_then_sample.utils.search_then_sample_utils import get_ik_ir_gen, base_motion, SavePath, \
-    SINGLE_ROOM, SINGLE_BIG_ROOM, SINGLE_SMALL_ROOM, create_shelf, create_shelf_placement, get_namo_rp_gen, \
+from search_then_sample.utils.search_then_sample_utils import base_motion, SavePath, \
+    SINGLE_BIG_ROOM, create_shelf_placement, get_namo_rp_gen, \
     get_goal_position, is_box_on_placement, is_numerical_equal_two_tuples
-from search_then_sample.train.constants import PRE_BOX_HOLDING_LEFT_ARM, BOX_HOLDING_LEFT_ARM, POST_BOX_HOLDING_LEFT_ARM, \
-    ROOM_WIDTH, ROOM_HEIGHT, BOX_PLACEMENT_SIZE, BOX_REACHABLE_MARGIN, BOX_SIZE, BOX_HOLDING_PARENT_LINK_POSE
+from search_then_sample.constants import PRE_BOX_HOLDING_LEFT_ARM, BOX_HOLDING_LEFT_ARM, POST_BOX_HOLDING_LEFT_ARM, \
+    ROOM_WIDTH, ROOM_HEIGHT, BOX_REACHABLE_MARGIN, BOX_SIZE
 
 from pybullet_utils.transformations import euler_from_quaternion
-from pybullet_planning.pybullet_tools.utils import get_pose, get_joint_positions, joints_from_names, is_placement, \
-    set_base_values, load_pybullet, create_box, set_point, sample_placement, set_pose, set_euler, joint_from_name, \
-    set_joint_positions, wait_for_duration, multiply, invert, get_euler, TABLE_URDF, WorldSaver, Attachment, pairwise_collision, \
-    STOVE_URDF, RED, BLUE, BROWN, GREY, WHITE
-from pybullet_planning.pybullet_tools.pr2_utils import get_other_arm, get_carry_conf, set_arm_conf, open_arm, PR2_GROUPS, \
-    arm_conf, close_arm, rightarm_from_leftarm, get_gripper_link, REST_LEFT_ARM
-from pybullet_planning.pybullet_tools.pr2_primitives import get_stable_gen, get_grasp_gen, create_attachment, Pose
-from pybullet_planning.pybullet_tools.pr2_problems import create_pr2, create_floor, Problem, TABLE_MAX_Z
-
+from pybullet_planning.pybullet_tools.utils import get_pose, get_joint_positions, joints_from_names, set_base_values, load_pybullet, create_box, set_point, \
+    set_euler, set_joint_positions, get_euler, WorldSaver, RED, BLUE, GREY, WHITE
+from pybullet_planning.pybullet_tools.pr2_utils import set_arm_conf, PR2_GROUPS, \
+    rightarm_from_leftarm, get_gripper_link
+from pybullet_planning.pybullet_tools.pr2_primitives import create_attachment
+from pybullet_planning.pybullet_tools.pr2_problems import create_pr2, create_floor, Problem
 
 '''
 Simplified NAMO in the following ways:
@@ -215,7 +206,8 @@ class NAMOEnvironment(Environment):
         save_data.init(sym_actions='init', base_states=world_state["base_position"],
                        arm_states=world_state["joints"], obj_states=[state[obj]['pose'] for obj in self._objs],
                        configs=None, hand_hold=None, feasibilities=None, steps=-1)
-        return state, self.robot, save_data
+        saved_world = WorldSaver()
+        return state, self.robot, save_data, saved_world
 
     def get_save_path(self):
         return self.save_path
