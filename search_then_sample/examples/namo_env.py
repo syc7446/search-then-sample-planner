@@ -212,7 +212,7 @@ class NAMOEnvironment(Environment):
     def get_save_path(self):
         return self.save_path
 
-    def sample_IsValidClear(self, state, obj, rng=None, pre_saved_world=None):
+    def sample_IsValidClear(self, state, obj, rng=None, pre_saved_world=None, save_sampled_config=None):
         print('===Sampling in IsValidClear===')
         if not pre_saved_world:
             saved_world = WorldSaver()
@@ -242,7 +242,8 @@ class NAMOEnvironment(Environment):
         attachment.assign()
 
         # p = random.uniform(-3.14, 3.14)
-        p = 0
+        p = 0 # TODO: fix this later!!
+        if save_sampled_config: p.value = save_sampled_config
         p_pose = get_joint_positions(self.robot, joints_from_names(self.robot, PR2_GROUPS['base']))[:2] + (p,)
         set_joint_positions(self.robot, [0, 1, 2], p_pose)
 
@@ -264,7 +265,7 @@ class NAMOEnvironment(Environment):
         basex, basey, baset = p_pose
         return {'saved_world': result_saved_world, 'config': p_pose, 0: basex, 1: basey, 2: baset}
 
-    def sample_IsValidPickPlace(self, state, obj, rng=None, pre_saved_world=None):
+    def sample_IsValidPickPlace(self, state, obj, rng=None, pre_saved_world=None, save_sampled_config=None):
         print('===Sampling in IsValidPickPlace===')
         if not pre_saved_world:
             saved_world = WorldSaver()
@@ -295,6 +296,7 @@ class NAMOEnvironment(Environment):
         rp_gen_fn = get_namo_rp_gen(self.fixed_obstacles + [self.robot] + self.boxes)
         rp_gen = rp_gen_fn(self._target_to_obj_id, self.goal_placement)
         (p,) = next(rp_gen)
+        if save_sampled_config: p.value = save_sampled_config
 
         base_start = get_joint_positions(self.robot, joints_from_names(self.robot, PR2_GROUPS['base']))
         base_goal = get_goal_position(p.value[0][:2],

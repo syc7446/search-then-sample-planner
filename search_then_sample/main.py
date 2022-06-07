@@ -13,9 +13,10 @@ import numpy as np
 from search_then_sample.examples.pick_place_env import PickPlaceEnvironment
 from search_then_sample.examples.pack_in_shelf_env import PackInShelfEnvironment
 from search_then_sample.examples.namo_env import NAMOEnvironment
-from search_then_sample.planner.backtrack_newsample_planner import BacktrackNewsamplePlanner
+from search_then_sample.planner.backtrack_newsample_planner import BacktrackNewsamplePlanner, PlanningExhausted, PlanningTimeout
 from search_then_sample.planner.backtrack_resample_planner import BacktrackResamplePlanner
-from search_then_sample.planner.backjump_newsample_planner import BackjumpNewsamplePlanner, PlanningExhausted, PlanningTimeout
+from search_then_sample.planner.backjump_newsample_planner import BackjumpNewsamplePlanner
+from search_then_sample.planner.backjump_resample_planner import BackjumpResamplePlanner
 import search_then_sample.utils.ground_truth_ndrs as ground_truth_ndrs
 import search_then_sample.utils.constants as constants
 from search_then_sample.utils.search_then_sample_utils import SaveData, store_path, store_data
@@ -87,7 +88,11 @@ for i in range(opt.num_probs):
                                            num_samples_per_step=opt.num_samples_per_step,
                                            learner_name=opt.learner_name)
     elif opt.planner_name == 'backjump_resample':
-        raise NotImplementedError
+        planner = BackjumpResamplePlanner(seed=opt.seed, timeout=constants.PLANNER_TIMEOUT,
+                                          heuristic_name="PyperplanHAddHeuristic",
+                                          num_samples_per_step=opt.num_samples_per_step,
+                                          num_resamples=opt.num_resamples,
+                                          learner_name=opt.learner_name)
 
     all_ndrs = ground_truth_ndrs.get_groundtruth_ndrs(opt.env_name, env)
 

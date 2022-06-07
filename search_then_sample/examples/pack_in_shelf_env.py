@@ -129,7 +129,7 @@ class PackInShelfEnvironment(Environment):
     def get_save_path(self):
         return self.save_path
 
-    def sample_IsValidPickPlace(self, state, obj, rng=None, pre_saved_world=None):
+    def sample_IsValidPickPlace(self, state, obj, rng=None, pre_saved_world=None, save_sampled_config=None):
         """Sample values for continuous arguments of IsValidPick.
         Return dict from predicate argument index to value.
         """
@@ -153,6 +153,7 @@ class PackInShelfEnvironment(Environment):
         grasps = list(self.grasp_gen_fn(self._objs_to_obj_ids[obj]))
 
         (p,) = next(placement_gen)
+        if save_sampled_config: p.value = save_sampled_config
         (g,) = choose_grasps(p, grasps) # TODO: hacked # random.choice(grasps)
         attachment = g.get_attachment(self.robot, self.arm)
         place_output = next(ik_ir_fn(self.arm, self._objs_to_obj_ids[obj], p, g), None)
