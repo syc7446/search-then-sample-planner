@@ -4,6 +4,3 @@
 [submodule "pybullet_planning"]
 	path = pybullet_planning
 	url = https://github.com/syc7446/pybullet-planning.git
-[submodule "culprit_learner"]
-	path = culprit_learner
-	url = https://github.com/syc7446/culprit_detection_learner.git
