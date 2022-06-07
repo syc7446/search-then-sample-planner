@@ -90,7 +90,7 @@ class BacktrackNewsamplePlanner:
                           "found plan of length {}: {}".format(
                               num_expanded, num_sampling, len(plan), plan))
                     print('Total number of motion problems solved', self._count_motion_prob_solving)
-                    return plan, env.get_save_path(), save_data
+                    return plan, env.get_save_path(), save_data, self._count_motion_prob_solving
                 else:
                     print('Symbolic plan failed so move onto the next one.')
             else:

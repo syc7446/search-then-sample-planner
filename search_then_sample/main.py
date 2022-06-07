@@ -5,6 +5,7 @@ import sys
 # setting path
 sys.path.append('..')
 
+import os
 import argparse
 import time
 import torch
@@ -99,7 +100,7 @@ for i in range(opt.num_probs):
     state, robot, save_data, saved_world = env.initial_pybullet_setup(opt.arm, opt.grasp_type, save_data)
     start_time = time.time()
     try:
-        plan, save_path, save_data = planner.plan(env, state, all_ndrs, save_data, saved_world)
+        plan, save_path, save_data, count_motion_prob_solving = planner.plan(env, state, all_ndrs, save_data, saved_world)
         if opt.save_merged_path:
             store_path(path=save_path, robot=robot, env_name=opt.env_name, arm=opt.arm,
                       grasp_type=opt.grasp_type, num_objs=opt.num_objs)
@@ -108,6 +109,13 @@ for i in range(opt.num_probs):
     except (PlanningExhausted, PlanningTimeout) as e:
         print(f'planning failed with error: {e}')
     print('finished in {:.5f} seconds'.format(time.time()-start_time))
+
+    if plan:
+        if not os.path.exists('result'): os.makedirs('result')
+        with open('result/'+opt.planner_name+'_results.txt', 'a+') as f:
+            f.write('{}, {:.5f}\n'.format(count_motion_prob_solving, time.time()-start_time))
+            f.close()
+
     del env
     del planner
     disconnect()
