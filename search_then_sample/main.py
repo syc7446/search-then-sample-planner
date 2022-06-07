@@ -29,11 +29,13 @@ torch.set_printoptions(precision=3, sci_mode=False)
 Arguments
 env_name options: 'pickplace', 'packinshelf', 'namo'
 planner_name options: 'backtrack_newsample', 'backtrack_resample', 'backjump_newsample', 'backjump_resample'
+learner_name options: 'plan_feasibility', 'imitation'
 '''
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--env_name', type=str, default="packinshelf")
 parser.add_argument('--planner_name', type=str, default='backjump_newsample')
+parser.add_argument('--learner_name', type=str, default='plan_feasibility')
 parser.add_argument('--seed', type=int, default=0)
 parser.add_argument('--arm', type=str, default='left')
 parser.add_argument('--grasp_type', type=str, default='side')
@@ -82,7 +84,8 @@ for i in range(opt.num_probs):
     elif opt.planner_name == 'backjump_newsample':
         planner = BackjumpNewsamplePlanner(seed=opt.seed, timeout=constants.PLANNER_TIMEOUT,
                                            heuristic_name="PyperplanHAddHeuristic",
-                                           num_samples_per_step=opt.num_samples_per_step)
+                                           num_samples_per_step=opt.num_samples_per_step,
+                                           learner_name=opt.learner_name)
     elif opt.planner_name == 'backjump_resample':
         raise NotImplementedError
 

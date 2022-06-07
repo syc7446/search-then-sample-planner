@@ -17,7 +17,7 @@ import search_then_sample.utils.constants as constants
 class BacktrackResamplePlanner:
     """Definition of planner.
     """
-    def __init__(self, seed, timeout, heuristic_name, num_samples_per_step, num_resamples):
+    def __init__(self, seed, timeout, heuristic_name, num_samples_per_step, num_resamples, learner_name=None):
         self._seed = seed
         self._timeout = timeout  # in seconds
         self._heuristic_name = heuristic_name  # from planner_heuristics.py
