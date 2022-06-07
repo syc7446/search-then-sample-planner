@@ -1,0 +1,55 @@
+{
+    "info": "imit_rnn_10_obj",
+    "cuda_id": 2,
+    "seed": 0,
+    "training_params": {
+        "dataset_fnames": ["data_10_obj_imit"],
+        "test_dataset_fnames": ["data_10_obj_pfl_test"],
+        "train_prop": 0.8,
+        "batch_size": 32,
+        "inference_algo": "Imitation",
+        "load_inference": "data/imit_rnn_10_obj_2022_06_06_03_50_13/inference_3",
+        "num_epochs": 10000,
+        "valid_freq": 1,
+        "test_freq": 1,
+        "saving_freq": 1
+    },
+    "gnn_params": {
+        "node_feat_size": 128,
+        "edge_feat_size": 128,
+        "gnn_feature_size": 128,
+        "node_net_sizes": [128, 128],
+        "edge_net_sizes": [128, 128],
+        "global_net_sizes": [128, 128]
+    },
+    "plan_feasibility_params": {
+        "lr": 1e-4,
+        "dropout": 0.0,
+        "grad_clip_norm": 0,
+        "use_attention": true,
+        "num_attention_blocks": 3,
+        "attention_size": 256,
+        "attention_fc_sizes": [256],
+        "num_heads": 8,
+        "obj_embedder_sizes": [128],
+        "obj_embedding_size": 256,
+        "obj_feature_size": 256,
+        "obj_rnn_num_layers": 3,
+        "predictor_sizes": [128, 128]
+    },
+    "imitation_params": {
+        "lr": 1e-4,
+        "dropout": 0.0,
+        "grad_clip_norm": 0,
+        "use_attention": false,
+        "num_attention_blocks": 3,
+        "attention_size": 256,
+        "attention_fc_sizes": [256],
+        "num_heads": 8,
+        "state_feature_size": 256,
+        "state_rnn_num_layers": 3,
+        "obj_embedder_sizes": [128],
+        "obj_feature_size": 256,
+        "predictor_sizes": [128, 128]
+    }
+}
