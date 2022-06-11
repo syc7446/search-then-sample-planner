@@ -251,6 +251,18 @@ class NAMOEnvironment(Environment):
         attachment.assign()
 
         p = random.uniform(-3.14, 3.14)
+        if self._objs_to_obj_ids[obj] == 4:
+            p = random.uniform(2, 3.14)
+        if self._objs_to_obj_ids[obj] == 5:
+            p = random.uniform(2.2, 3.14)
+        if self._objs_to_obj_ids[obj] == 6:
+            p = random.uniform(-2, 2)
+        if self._objs_to_obj_ids[obj] == 7:
+            p = random.uniform(-1, 1.5)
+        if self._objs_to_obj_ids[obj] == 8:
+            p = 2.5
+        if self._objs_to_obj_ids[obj] > 8:
+            p = -0.5
         if save_sampled_config: p.value = save_sampled_config
         p_pose = get_joint_positions(self.robot, joints_from_names(self.robot, PR2_GROUPS['base']))[:2] + (p,)
         set_joint_positions(self.robot, [0, 1, 2], p_pose)
@@ -358,10 +370,10 @@ class NAMOEnvironment(Environment):
         for i in range(self._num_objs):
             self.boxes.append(create_box(BOX_SIZE, BOX_SIZE, BOX_SIZE, color=BLUE))
             if i == 0:
-                set_point(self.boxes[i], (0.8, 1.4, BOX_SIZE / 2))
+                set_point(self.boxes[i], (0.6, 1.8, BOX_SIZE / 2))
                 set_euler(self.boxes[i], (0.0, 0.0, 1.4))
             elif i == 1:
-                set_point(self.boxes[i], (1.0, 2.1, BOX_SIZE / 2))
+                set_point(self.boxes[i], (0.8, 2.1, BOX_SIZE / 2))
                 set_euler(self.boxes[i], (0.0, 0.0, 1.3))
             elif i == 2:
                 set_point(self.boxes[i], (1.7, 2.4, BOX_SIZE / 2))
