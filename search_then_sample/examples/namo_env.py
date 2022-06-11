@@ -187,6 +187,10 @@ class NAMOEnvironment(Environment):
         reward = int(self.literal_goal.issubset(hl_next_state))
         done = (reward == 1)
 
+        save_data.add_rest(base_states=next_state[self._world]["base_position"],
+                           arm_states=next_state[self._world]["joints"],
+                           obj_states=[next_state[obj]["pose"] for obj in self._objs] + [next_state[self._target]["pose"]],
+                           hand_hold=None, feasibilities=True)
         return next_state, reward, done, save_data
 
     def initial_pybullet_setup(self, arm, grasp_type, save_data):
