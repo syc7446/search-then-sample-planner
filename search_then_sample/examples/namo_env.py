@@ -1,8 +1,10 @@
+import math
+import random
 import search_then_sample.utils.structs as structs
 from search_then_sample.utils.env_base import Environment
 from search_then_sample.utils.utils import WORLD
 from search_then_sample.utils.search_then_sample_utils import base_motion, SavePath, \
-    SINGLE_BIG_ROOM, create_shelf_placement, get_namo_rp_gen, \
+    SINGLE_BIG_ROOM, create_shelf_placement, get_namo_rp_gen, simple_direct_path_base_motion, \
     get_goal_position, is_box_on_placement, is_numerical_equal_two_tuples
 from search_then_sample.constants import PRE_BOX_HOLDING_LEFT_ARM, BOX_HOLDING_LEFT_ARM, POST_BOX_HOLDING_LEFT_ARM, \
     ROOM_WIDTH, ROOM_HEIGHT, BOX_REACHABLE_MARGIN, BOX_SIZE
@@ -164,8 +166,11 @@ class NAMOEnvironment(Environment):
             if pred_name == "Cleared9":
                 if not is_numerical_equal_two_tuples(state[self._objs[9]]["pose"], state[self._objs[9]]["init_pose"], 5):
                     lits.add(pred(self._objs[9]))
-            if pred_name == "GoalReach" and is_box_on_placement(self._target_to_obj_id, self.goal_placement):
-                lits.add(pred())
+            # TODO: simplified
+            if pred_name == "GoalReach": # and is_box_on_placement(self._target_to_obj_id, self.goal_placement):
+                if math.dist([get_pose(self._target_to_obj_id)[0][0], get_pose(self._target_to_obj_id)[0][1]],
+                             [get_pose(self.goal_placement)[0][0], get_pose(self.goal_placement)[0][1]]) < 1.0:
+                    lits.add(pred())
         return lits
 
     def simulate(self, state, action, save_data):
@@ -226,7 +231,7 @@ class NAMOEnvironment(Environment):
                                       self.reachable_point)
         base_reach_path = base_motion(self.robot, base_start, base_goal,
                                       teleport=True,
-                                      obstacles=self.fixed_obstacles + [self.target_box],
+                                      obstacles=[], # self.fixed_obstacles + [self.target_box], # TODO: simplifed
                                       custom_limits=self.custom_limits)
         if not base_reach_path:
             print('Plan fails: base reach motion in IsValidClear')
@@ -241,8 +246,7 @@ class NAMOEnvironment(Environment):
         set_arm_conf(self.robot, 'right', rightarm_from_leftarm(POST_BOX_HOLDING_LEFT_ARM))
         attachment.assign()
 
-        # p = random.uniform(-3.14, 3.14)
-        p = 0 # TODO: fix this later!!
+        p = random.uniform(-3.14, 3.14)
         if save_sampled_config: p.value = save_sampled_config
         p_pose = get_joint_positions(self.robot, joints_from_names(self.robot, PR2_GROUPS['base']))[:2] + (p,)
         set_joint_positions(self.robot, [0, 1, 2], p_pose)
@@ -302,11 +306,15 @@ class NAMOEnvironment(Environment):
         base_goal = get_goal_position(p.value[0][:2],
                                       euler_from_quaternion(p.value[1])[-1],
                                       self.reachable_point)
-        base_clear_path = base_motion(self.robot, base_start, base_goal,
-                                      attachments=[attachment], obstacles=self.fixed_obstacles + self.boxes,
-                                      custom_limits=self.custom_limits)
+        # TODO: simplified. direct_check is used for simplicity. use base_motion for actual evaluation
+        # base_clear_path = base_motion(self.robot, base_start, base_goal,
+        #                               attachments=[attachment], obstacles=self.fixed_obstacles + self.boxes,
+        #                               custom_limits=self.custom_limits)
+        base_clear_path = simple_direct_path_base_motion(self.robot, base_start, base_goal,
+                                                         attachments=[attachment], obstacles=self.fixed_obstacles[1:] + self.boxes,
+                                                         custom_limits=self.custom_limits)
         if not base_clear_path:
-            print('Plan fails: base clear motion in IsValidClear')
+            print('Plan fails: base clear motion in IsValidPickPlace')
             saved_world.restore()
             return p.value
         set_joint_positions(self.robot, [0, 1, 2], base_clear_path[-1])
@@ -346,11 +354,11 @@ class NAMOEnvironment(Environment):
         for i in range(self._num_objs):
             self.boxes.append(create_box(BOX_SIZE, BOX_SIZE, BOX_SIZE, color=BLUE))
             if i == 0:
-                set_point(self.boxes[i], (0.6, 1.4, BOX_SIZE / 2))
-                set_euler(self.boxes[i], (0.0, 0.0, 1.0))
+                set_point(self.boxes[i], (0.8, 1.4, BOX_SIZE / 2))
+                set_euler(self.boxes[i], (0.0, 0.0, 1.4))
             elif i == 1:
-                set_point(self.boxes[i], (0.8, 2.1, BOX_SIZE / 2))
-                set_euler(self.boxes[i], (0.0, 0.0, 1.0))
+                set_point(self.boxes[i], (1.0, 2.1, BOX_SIZE / 2))
+                set_euler(self.boxes[i], (0.0, 0.0, 1.3))
             elif i == 2:
                 set_point(self.boxes[i], (1.7, 2.4, BOX_SIZE / 2))
                 set_euler(self.boxes[i], (0.0, 0.0, 1.5))
@@ -358,7 +366,7 @@ class NAMOEnvironment(Environment):
                 set_point(self.boxes[i], (1.3, 3.0, BOX_SIZE / 2))
                 set_euler(self.boxes[i], (0.0, 0.0, 1.4))
             elif i == 4:
-                set_point(self.boxes[i], (1.4, 3.8, BOX_SIZE / 2))
+                set_point(self.boxes[i], (1.0, 3.8, BOX_SIZE / 2))
                 set_euler(self.boxes[i], (0.0, 0.0, 1.57))
             elif i == 5:
                 set_point(self.boxes[i], (2.0, 4.5, BOX_SIZE / 2))

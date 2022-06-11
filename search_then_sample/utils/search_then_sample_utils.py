@@ -17,13 +17,17 @@ from pybullet_planning.pybullet_tools.pr2_primitives import create_trajectory, i
     SELF_COLLISIONS, Pose, Conf
 from pybullet_planning.pybullet_tools.pr2_utils import get_gripper_link, get_arm_joints, arm_conf, open_arm, get_aabb, \
     get_disabled_collisions, get_group_joints, learned_pose_generator, PR2_GROUPS
-from pybullet_planning.pybullet_tools.utils import is_placement, multiply, invert, set_joint_positions, pairwise_collision, \
+from pybullet_planning.pybullet_tools.utils import is_placement, multiply, invert, set_joint_positions, \
+    pairwise_collision, \
     get_joint_positions, plan_direct_joint_motion, plan_joint_motion, joint_from_name, all_between, BodySaver, \
     LockRenderer, get_bodies, get_joint_limits, set_joint_limits, get_default_resolution, uniform_pose_generator, Saver, \
     PoseSaver, ConfSaver, get_configuration, remove_body, inverse_kinematics_helper, get_movable_joints, get_link_pose, \
-    is_pose_close, elapsed_time, irange, create_sub_robot, get_custom_limits, sub_inverse_kinematics, INF, get_box_geometry, \
-    create_shape, create_body, sample_placement, get_pose, get_euler, STATIC_MASS, RED, BROWN, join_paths, get_parent_dir
-
+    is_pose_close, elapsed_time, irange, create_sub_robot, get_custom_limits, sub_inverse_kinematics, INF, \
+    get_box_geometry, \
+    create_shape, create_body, sample_placement, get_pose, get_euler, STATIC_MASS, RED, BROWN, join_paths, \
+    get_parent_dir, \
+    get_extend_fn, get_collision_fn, MAX_DISTANCE
+from pybullet_planning.motion.motion_planners.utils import default_selector
 
 MODEL_DIRECTORY = join_paths(get_parent_dir(__file__), os.pardir, '../pybullet_planning/models/')
 ROOM_FLOOR = join_paths(MODEL_DIRECTORY, 'room_floor.urdf')
@@ -51,7 +55,7 @@ def base_motion(robot, base_start, base_goal, teleport=False, obstacles=[], atta
             return None
         return [base_start, base_goal]
     else:
-        resolutions = np.array([2*get_default_resolution(robot, 2), 2*get_default_resolution(robot, 2),
+        resolutions = np.array([2 * get_default_resolution(robot, 2), 2 * get_default_resolution(robot, 2),
                                 get_default_resolution(robot, 2)])
         with LockRenderer(lock=False):
             base_path = plan_joint_motion(robot, base_joints, base_goal, obstacles=obstacles,
@@ -59,6 +63,46 @@ def base_motion(robot, base_start, base_goal, teleport=False, obstacles=[], atta
                                           resolutions=resolutions, custom_limits=custom_limits)
         if not base_path: set_joint_positions(robot, base_joints, base_start)
         return base_path
+
+
+def simple_direct_path_base_motion(robot, base_start, base_goal, teleport=False, obstacles=[], attachments=[],
+                            custom_limits={}):
+    disabled_collisions = get_disabled_collisions(robot)
+    base_start = (base_start[0], base_start[1], -2.0)  # TODO: hard-coded
+    base_joints = [joint_from_name(robot, name) for name in PR2_GROUPS['base']]
+    set_joint_positions(robot, base_joints, base_start)
+    # base_goal = base_goal[:len(base_joints)]
+    base_goal = (0.0, 0.0, 0.0) # TODO: hard-coded. instead use the above
+    resolutions = np.array([2 * get_default_resolution(robot, 2), 2 * get_default_resolution(robot, 2),
+                            get_default_resolution(robot, 2)])
+    self_collisions = True
+    max_distance = MAX_DISTANCE
+    use_aabb = False
+    cache = True
+
+    # if math.floor(abs((base_goal[0]-base_start[0]) / resolutions[0])) > \
+    #     math.floor(abs((base_goal[1]-base_start[1]) / resolutions[1])):
+    #     num_steps = math.floor(abs((base_goal[0]-base_start[0]) / resolutions[0]))
+    #     resolutions[1] = abs((base_goal[1]-base_start[1])) / num_steps
+    # else:
+    #     num_steps = math.floor(abs((base_goal[1] - base_start[1]) / resolutions[1]))
+    #     resolutions[0] = abs((base_goal[0] - base_start[0])) / num_steps
+    num_steps = 10
+    resolutions[0] = abs((base_goal[0] - base_start[0])) / num_steps
+    resolutions[1] = abs((base_goal[1] - base_start[1])) / num_steps
+
+    collision_fn = get_collision_fn(robot, base_joints, obstacles, attachments, self_collisions, disabled_collisions,
+                                    custom_limits=custom_limits, max_distance=max_distance,
+                                    use_aabb=use_aabb, cache=cache)
+    base_path = []
+    for t in range(num_steps):
+        base_path.append((base_start[0] - t * resolutions[0],
+                          base_start[1] - t * resolutions[1],
+                          base_start[2]))
+    if any(collision_fn(q) for q in default_selector(base_path)):
+        base_path = None
+    if not base_path: set_joint_positions(robot, base_joints, base_start)
+    return base_path
 
 
 def get_ir_sampler(problem, custom_limits={}, max_attempts=25, collisions=True, collision_objs=[], learned=True):
@@ -72,7 +116,7 @@ def get_ir_sampler(problem, custom_limits={}, max_attempts=25, collisions=True, 
         for _ in iterate_approach_path(robot, arm, gripper, pose, grasp, body=obj):
             if any(pairwise_collision(gripper, b) or pairwise_collision(obj, b) for b in approach_obstacles):
                 return
-        gripper_pose = multiply(pose.value, invert(grasp.value)) # w_f_g = w_f_o * (g_f_o)^-1
+        gripper_pose = multiply(pose.value, invert(grasp.value))  # w_f_g = w_f_o * (g_f_o)^-1
         default_conf = arm_conf(arm, grasp.carry)
         arm_joints = get_arm_joints(robot, arm)
         base_joints = get_group_joints(robot, 'base')
@@ -93,11 +137,12 @@ def get_ir_sampler(problem, custom_limits={}, max_attempts=25, collisions=True, 
                 set_joint_positions(robot, arm_joints, default_conf)
                 if any(pairwise_collision(robot, b) for b in obstacles + [obj]):
                     continue
-                #print('IR attempts:', count)
+                # print('IR attempts:', count)
                 yield (bq,)
                 break
             else:
                 yield None
+
     return gen_fn
 
 
@@ -111,32 +156,34 @@ def get_ik_fn(problem, custom_limits={}, collisions=True, collision_objs=[], tel
 
     def fn(arm, obj, pose, grasp, base_conf):
         approach_obstacles = {obst for obst in obstacles if not is_placement(obj, obst)}
-        gripper_pose = multiply(pose.value, invert(grasp.value)) # w_f_g = w_f_o * (g_f_o)^-1
-        #approach_pose = multiply(grasp.approach, gripper_pose)
+        gripper_pose = multiply(pose.value, invert(grasp.value))  # w_f_g = w_f_o * (g_f_o)^-1
+        # approach_pose = multiply(grasp.approach, gripper_pose)
         approach_pose = multiply(pose.value, invert(grasp.approach))
         arm_link = get_gripper_link(robot, arm)
         arm_joints = get_arm_joints(robot, arm)
 
         default_conf = arm_conf(arm, grasp.carry)
-        #sample_fn = get_sample_fn(robot, arm_joints)
+        # sample_fn = get_sample_fn(robot, arm_joints)
         pose.assign()
         base_conf.assign()
         open_arm(robot, arm)
-        set_joint_positions(robot, arm_joints, default_conf) # default_conf | sample_fn()
-        grasp_conf = pr2_inverse_kinematics(robot, arm, gripper_pose, custom_limits=custom_limits) #, upper_limits=USE_CURRENT)
-                                            #nearby_conf=USE_CURRENT) # upper_limits=USE_CURRENT,
-        if (grasp_conf is None) or any(pairwise_collision(robot, b) for b in obstacles): # [obj]
-            #print('Grasp IK failure', grasp_conf)
-            #if grasp_conf is not None:
+        set_joint_positions(robot, arm_joints, default_conf)  # default_conf | sample_fn()
+        grasp_conf = pr2_inverse_kinematics(robot, arm, gripper_pose,
+                                            custom_limits=custom_limits)  # , upper_limits=USE_CURRENT)
+        # nearby_conf=USE_CURRENT) # upper_limits=USE_CURRENT,
+        if (grasp_conf is None) or any(pairwise_collision(robot, b) for b in obstacles):  # [obj]
+            # print('Grasp IK failure', grasp_conf)
+            # if grasp_conf is not None:
             #    print(grasp_conf)
             #    #wait_if_gui()
             return None
-        #approach_conf = pr2_inverse_kinematics(robot, arm, approach_pose, custom_limits=custom_limits,
+        # approach_conf = pr2_inverse_kinematics(robot, arm, approach_pose, custom_limits=custom_limits,
         #                                       upper_limits=USE_CURRENT, nearby_conf=USE_CURRENT)
-        approach_conf = sub_inverse_kinematics(robot, arm_joints[0], arm_link, approach_pose, custom_limits=custom_limits)
+        approach_conf = sub_inverse_kinematics(robot, arm_joints[0], arm_link, approach_pose,
+                                               custom_limits=custom_limits)
         if (approach_conf is None) or any(pairwise_collision(robot, b) for b in obstacles + [obj]):
-            #print('Approach IK failure', approach_conf)
-            #wait_if_gui()
+            # print('Approach IK failure', approach_conf)
+            # wait_if_gui()
             return None
         approach_conf = get_joint_positions(robot, arm_joints)
         attachment = grasp.get_attachment(problem.robot, arm)
@@ -156,14 +203,15 @@ def get_ik_fn(problem, custom_limits={}, collisions=True, collision_objs=[], tel
             set_joint_positions(robot, arm_joints, approach_conf)
             grasp_path = plan_direct_joint_motion(robot, arm_joints, grasp_conf, attachments=attachments.values(),
                                                   obstacles=approach_obstacles, self_collisions=SELF_COLLISIONS,
-                                                  custom_limits=custom_limits, resolutions=resolutions/2.)
+                                                  custom_limits=custom_limits, resolutions=resolutions / 2.)
             if grasp_path is None:
                 print('Grasp path failure')
                 return None
             path = approach_path + grasp_path
         mt = create_trajectory(robot, arm_joints, path)
         cmd = Commands(State(attachments=attachments), savers=[BodySaver(robot)], commands=[mt])
-        return (cmd, attachments, gripper_pose[0],) # Only this line has been changed from the original code
+        return (cmd, attachments, gripper_pose[0],)  # Only this line has been changed from the original code
+
     return fn
 
 
@@ -179,7 +227,7 @@ def get_ir_sampler_legacy(problem, custom_limits={}, max_attempts=25, collisions
         for _ in iterate_approach_path(robot, arm, gripper, pose, grasp, body=obj):
             if any(pairwise_collision(gripper, b) or pairwise_collision(obj, b) for b in approach_obstacles):
                 return
-        gripper_pose = multiply(pose.value, invert(grasp.value)) # w_f_g = w_f_o * (g_f_o)^-1
+        gripper_pose = multiply(pose.value, invert(grasp.value))  # w_f_g = w_f_o * (g_f_o)^-1
         default_conf = arm_conf(arm, grasp.carry)
         arm_joints = get_arm_joints(robot, arm)
         base_joints = get_group_joints(robot, 'base')
@@ -206,11 +254,12 @@ def get_ir_sampler_legacy(problem, custom_limits={}, max_attempts=25, collisions
                 set_joint_positions(robot, arm_joints, default_conf)
                 if any(pairwise_collision(robot, b) for b in obstacles + [obj]):
                     continue
-                #print('IR attempts:', count)
+                # print('IR attempts:', count)
                 yield (bq,)
                 break
             else:
                 yield None
+
     return gen_fn
 
 
@@ -218,6 +267,7 @@ def get_ik_ir_gen(problem, max_attempts=25, learned=True, teleport=False, **kwar
     # TODO: compose using general fn
     ir_sampler = get_ir_sampler(problem, learned=learned, max_attempts=max_attempts, **kwargs)
     ik_fn = get_ik_fn(problem, teleport=teleport, **kwargs)
+
     def gen(*inputs):
         b, a, p, g = inputs
         ir_generator = ir_sampler(*inputs)
@@ -241,8 +291,9 @@ def get_ik_ir_gen(problem, max_attempts=25, learned=True, teleport=False, **kwar
             print('IK attempts:', attempts)
             yield ir_outputs + ik_outputs
             return
-            #if not p.init:
+            # if not p.init:
             #    return
+
     return gen
 
 
@@ -250,6 +301,7 @@ def get_ik_skip_ir_gen(problem, shelf, reachable_point, max_attempts=25, learned
     # TODO: compose using general fn
     robot = problem.robot
     ik_fn = get_ik_fn(problem, teleport=teleport, **kwargs)
+
     def gen(*inputs):
         b, a, p, g = inputs
         attempts = 0
@@ -264,7 +316,7 @@ def get_ik_skip_ir_gen(problem, shelf, reachable_point, max_attempts=25, learned
                 base_joints = get_group_joints(robot, 'base')
                 base_conf = get_goal_position(get_pose(shelf)[0][:2],
                                               get_euler(shelf)[-1] + 1.57,
-                                              reachable_point) # TODO: hard-coded rotation value (1.57: 90 degree rotation)
+                                              reachable_point)  # TODO: hard-coded rotation value (1.57: 90 degree rotation)
                 ir_outputs = (Conf(robot, base_joints, base_conf),)
             except StopIteration:
                 return
@@ -276,8 +328,9 @@ def get_ik_skip_ir_gen(problem, shelf, reachable_point, max_attempts=25, learned
             print('IK attempts:', attempts)
             yield ir_outputs + ik_outputs
             return
-            #if not p.init:
+            # if not p.init:
             #    return
+
     return gen
 
 
@@ -308,18 +361,19 @@ def get_goal_position(translate, rotate, reachable_point):
                       [0, 0, 1]])
     reachable_point = [list(reachable_point)]
     reachable_point[0][-1] = 1.0
-    return tuple(np.squeeze(tform @ np.transpose(np.array(reachable_point))))[:2]+(rotate,)
+    return tuple(np.squeeze(tform @ np.transpose(np.array(reachable_point))))[:2] + (rotate,)
 
 
 def is_box_on_placement(body, surface):
     if get_aabb(surface).lower[0] < get_aabb(body).lower[0] and get_aabb(surface).lower[1] < get_aabb(body).lower[1] and \
-        get_aabb(surface).upper[0] > get_aabb(body).upper[0] and get_aabb(surface).upper[1] > get_aabb(body).upper[1]:
+            get_aabb(surface).upper[0] > get_aabb(body).upper[0] and get_aabb(surface).upper[1] > get_aabb(body).upper[
+        1]:
         return True
     else:
         return False
 
 
-def choose_grasps(placement_pose, grasps): # TODO: hacked to always choose the grasp towards the same direction
+def choose_grasps(placement_pose, grasps):  # TODO: hacked to always choose the grasp towards the same direction
     for i in range(len(grasps)):
         rotate = math.degrees(euler_from_quaternion(multiply(placement_pose.value, invert(grasps[i][0].value))[-1])[-1])
         if rotate > 45 and rotate < 135:
@@ -344,8 +398,9 @@ def get_custom_limits_legacy(robot, room_floors, target=None):
                 limits = get_aabb(room_floor)
                 if not target:
                     return (limits.lower[0], limits.upper[0]), (limits.lower[1], limits.upper[1])
-                else: break
-        if not limits: # This sometimes occurs when the robot is placed near the boundary of adjacent rooms.
+                else:
+                    break
+        if not limits:  # This sometimes occurs when the robot is placed near the boundary of adjacent rooms.
             total_limit_lower0, total_limit_lower1 = float('inf'), float('inf')
             total_limit_upper0, total_limit_upper1 = float('-inf'), float('-inf')
             for room_floor in room_floors:
@@ -357,20 +412,28 @@ def get_custom_limits_legacy(robot, room_floors, target=None):
             return (total_limit_lower0, total_limit_upper0), (total_limit_lower1, total_limit_upper1)
         else:
             target_limits = get_aabb(target)
-            if target_limits.lower[0] < limits.lower[0]: total_limit_lower0 = target_limits.lower[0]
-            else: total_limit_lower0 = limits.lower[0]
-            if target_limits.upper[0] < limits.upper[0]: total_limit_upper0 = limits.upper[0]
-            else: total_limit_upper0 = target_limits.upper[0]
-            if target_limits.lower[1] < limits.lower[1]: total_limit_lower1 = target_limits.lower[1]
-            else: total_limit_lower1 = limits.lower[1]
-            if target_limits.upper[1] < limits.upper[1]: total_limit_upper1 = limits.upper[1]
-            else: total_limit_upper1 = target_limits.upper[1]
+            if target_limits.lower[0] < limits.lower[0]:
+                total_limit_lower0 = target_limits.lower[0]
+            else:
+                total_limit_lower0 = limits.lower[0]
+            if target_limits.upper[0] < limits.upper[0]:
+                total_limit_upper0 = limits.upper[0]
+            else:
+                total_limit_upper0 = target_limits.upper[0]
+            if target_limits.lower[1] < limits.lower[1]:
+                total_limit_lower1 = target_limits.lower[1]
+            else:
+                total_limit_lower1 = limits.lower[1]
+            if target_limits.upper[1] < limits.upper[1]:
+                total_limit_upper1 = limits.upper[1]
+            else:
+                total_limit_upper1 = target_limits.upper[1]
             return (total_limit_lower0, total_limit_upper0), (total_limit_lower1, total_limit_upper1)
 
 
 def apply_margin(base_goal, custom_limits, margin_to_walls):
     safe_base_goal = ()
-    for i in range(2): # We do this for base x and base y only
+    for i in range(2):  # We do this for base x and base y only
         if base_goal.value[0][i] < custom_limits[i][0] + margin_to_walls:
             safe_base_goal += (custom_limits[i][0] + margin_to_walls,)
         elif base_goal.value[0][i] > custom_limits[i][1] - margin_to_walls:
@@ -382,7 +445,7 @@ def apply_margin(base_goal, custom_limits, margin_to_walls):
 
 
 def plan_cartesian_motion_legacy(robot, first_joint, target_link, waypoint_poses,
-                          max_iterations=200, max_time=INF, custom_limits={}, **kwargs):
+                                 max_iterations=200, max_time=INF, custom_limits={}, **kwargs):
     # TODO: fix stationary joints
     # TODO: pass in set of movable joints and take least common ancestor
     # TODO: update with most recent bullet updates
@@ -395,7 +458,7 @@ def plan_cartesian_motion_legacy(robot, first_joint, target_link, waypoint_poses
     upper_limits = (custom_limits[0][1], custom_limits[1][1]) + upper_limits[2:]
     sub_robot, selected_joints, sub_target_link = create_sub_robot(robot, first_joint, target_link)
     sub_joints = get_movable_joints(sub_robot)
-    #null_space = get_null_space(robot, selected_joints, custom_limits=custom_limits)
+    # null_space = get_null_space(robot, selected_joints, custom_limits=custom_limits)
     null_space = None
 
     solutions = []
@@ -405,7 +468,8 @@ def plan_cartesian_motion_legacy(robot, first_joint, target_link, waypoint_poses
             if elapsed_time(start_time) >= max_time:
                 remove_body(sub_robot)
                 return None
-            sub_kinematic_conf = inverse_kinematics_helper(sub_robot, sub_target_link, target_pose, null_space=null_space)
+            sub_kinematic_conf = inverse_kinematics_helper(sub_robot, sub_target_link, target_pose,
+                                                           null_space=null_space)
             if sub_kinematic_conf is None:
                 remove_body(sub_robot)
                 return None
@@ -414,14 +478,14 @@ def plan_cartesian_motion_legacy(robot, first_joint, target_link, waypoint_poses
                 set_joint_positions(robot, selected_joints, sub_kinematic_conf)
                 kinematic_conf = get_configuration(robot)
                 if not all_between(lower_limits, kinematic_conf, upper_limits):
-                    #movable_joints = get_movable_joints(robot)
-                    #print([(get_joint_name(robot, j), l, v, u) for j, l, v, u in
+                    # movable_joints = get_movable_joints(robot)
+                    # print([(get_joint_name(robot, j), l, v, u) for j, l, v, u in
                     #       zip(movable_joints, lower_limits, kinematic_conf, upper_limits) if not (l <= v <= u)])
-                    #print("Limits violated")
-                    #wait_if_gui()
+                    # print("Limits violated")
+                    # wait_if_gui()
                     remove_body(sub_robot)
                     return None
-                #print("IK iterations:", iteration)
+                # print("IK iterations:", iteration)
                 solutions.append(kinematic_conf)
                 break
         else:
@@ -440,7 +504,7 @@ def pause_pybullet(physics_client_id, secs=float("inf")):
     while True:
         p.setGravity(0., 0., -10., physicsClientId=physics_client_id)
         time.sleep(0.1)
-        if time.time()-start_time > secs:
+        if time.time() - start_time > secs:
             break
 
 
@@ -451,7 +515,7 @@ def get_move_action(gripper_position, target_position, gain=5,
     # Get the currents
     target_position = np.array(target_position)
     gripper_position = np.array(gripper_position)
-    action = gain * (target_position-gripper_position)
+    action = gain * (target_position - gripper_position)
     action_norm = np.linalg.norm(action)
     if action_norm > max_vel_norm:
         action = action * max_vel_norm / action_norm
@@ -545,7 +609,7 @@ def get_joint_ranges(body_id, joint_indices, physics_client_id=-1):
 
         # Fix joints that we don't want to move
         if i not in joint_indices:
-            ll, ul = rp-1e-8, rp+1e-8
+            ll, ul = rp - 1e-8, rp + 1e-8
             jr = 1e-8
 
         lower_limits.append(ll)
@@ -654,7 +718,7 @@ def store_path(path=None, robot=None, env_name=None, arm=None, grasp_type=None, 
     db['num_objs'] = num_objs
 
     path = join_paths(get_parent_dir(__file__), os.pardir, '../')
-    dbfile = open(path+'/data/path_{}'.format(datetime.now()), 'ab')
+    dbfile = open(path + '/data/path_{}'.format(datetime.now()), 'ab')
     pickle.dump(db, dbfile)
     dbfile.close()
 
@@ -753,6 +817,7 @@ class SAHashable:
     """Defines a hashable object so that we can cache the transition model.
     Hashes a state and action.
     """
+
     def __init__(self, state, action, world, objs):
         self.state = state
         self.action = action

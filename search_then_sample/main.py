@@ -35,8 +35,8 @@ learner_name options: 'plan_feasibility', 'imitation'
 '''
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--env_name', type=str, default="packinshelf")
-parser.add_argument('--planner_name', type=str, default='backjump_newsample')
+parser.add_argument('--env_name', type=str, default="namo")
+parser.add_argument('--planner_name', type=str, default='backtrack_newsample')
 parser.add_argument('--learner_name', type=str, default='plan_feasibility')
 parser.add_argument('--seed', type=int, default=0)
 parser.add_argument('--arm', type=str, default='left')
