@@ -57,7 +57,6 @@ print(opt)
 
 random.seed(opt.seed)
 np.random.seed(opt.seed)
-save_data = SaveData()
 
 if opt.generalization:
     num_objs = np.random.randint(5, opt.num_objs + 1, opt.num_probs)
@@ -65,6 +64,7 @@ else:
     num_objs = np.full(opt.num_probs, opt.num_objs)
 
 for i, num_obj in enumerate(num_objs):
+    save_data = SaveData()
     print("{}/{}".format(i + 1, opt.num_probs))
 
     sim_id = connect(use_gui=opt.use_gui)
