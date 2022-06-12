@@ -1,6 +1,7 @@
 """Srivastava-style sampling-based TAMP planner.
 """
 
+import os
 import time
 import torch
 from torch_geometric.data import Batch
@@ -22,7 +23,8 @@ from culprit_learner.utils.utils import TrainingParams, set_seed_everywhere
 class BackjumpResamplePlanner:
     """Definition of planner.
     """
-    def __init__(self, seed, timeout, heuristic_name, num_samples_per_step, num_resamples, learner_name=None):
+    def __init__(self, seed, timeout, heuristic_name, num_samples_per_step, num_resamples,
+                 learner_name=None, learner_path=None, cuda_id=0):
         self._seed = seed
         self._timeout = timeout  # in seconds
         self._heuristic_name = heuristic_name  # from planner_heuristics.py
@@ -33,6 +35,8 @@ class BackjumpResamplePlanner:
         self._count_motion_prob_solving = 0
         self._obj_state_traj = []   # For backjumping model
         self._learner_name = learner_name
+        self._learner_path = learner_path
+        self._cuda_id = cuda_id
 
     def plan(self, env, state, all_ndrs, save_data, saved_world):
         """Return a plan given an env, low-level state, and NDR dictionary.
@@ -69,11 +73,11 @@ class BackjumpResamplePlanner:
         state_graphs = get_state_graph([tuple([0.0] * 6 + [1.0]) for _ in range(len(self._init_obj_state))], self._init_obj_state)
         obj_infos = np.array([BOX_SIZE])
 
-        if self._learner_name == 'plan_feasibility':
-            params = TrainingParams(params_fname="/params/plan_feasibility_params.json", train=False)
-        elif self._learner_name == 'imitation':
-            params = TrainingParams(params_fname="/params/imitation_params.json", train=False)
-        self._device = torch.device("cuda:{}".format(params.cuda_id) if torch.cuda.is_available() else "cpu")
+        params_fname = os.path.join(self._learner_path, "params.json")
+        params = TrainingParams(params_fname=params_fname, train=False)
+        params.training_params.load_inference = os.path.join(self._learner_path, "inference")
+        assert os.path.exists(params.training_params.load_inference)
+        self._device = torch.device("cuda:{}".format(self._cuda_id) if torch.cuda.is_available() else "cpu")
         set_seed_everywhere(self._seed)
         params.device = self._device
         params.node_size = state_graphs.x.shape[1]
@@ -83,6 +87,7 @@ class BackjumpResamplePlanner:
             self._inference = PlanFeasibility(params)
         elif self._learner_name == 'imitation':
             self._inference = Imitation(params)
+        self._inference.eval()
 
         return self._find_plan(env, state, lits, heuristic, save_data)
 
