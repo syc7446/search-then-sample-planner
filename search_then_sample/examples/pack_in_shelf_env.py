@@ -73,8 +73,10 @@ class PackInShelfEnvironment(Environment):
             pred = self._all_predicate_names_to_preds[pred_name]
             for obj in self._objs:
                 if pred_name == "OnTable":
+                    # TODO: remove the below table[2] later. this is for temporary evaluation
                     if is_placement(self._objs_to_obj_ids[obj], self.table[0]) or \
-                            is_placement(self._objs_to_obj_ids[obj], self.table[1]):
+                            is_placement(self._objs_to_obj_ids[obj], self.table[1]) or \
+                            is_placement(self._objs_to_obj_ids[obj], self.table[2]):
                         lits.add(pred(obj))
                 if pred_name == "InShelf" and is_placement(self._objs_to_obj_ids[obj], self.shelf_placement):
                     lits.add(pred(obj))
@@ -216,8 +218,12 @@ class PackInShelfEnvironment(Environment):
         set_point(self.table[0], (-1.2, -1.4, 0))
         self.table.append(load_pybullet(NARROW_TABLE))
         set_point(self.table[1], (1.2, -1.4, 0))
+        # TODO: remove the below table[2] later. this is for temporary evaluation
+        self.table.append(load_pybullet(NARROW_TABLE))
+        set_point(self.table[2], (2.0, 1.0, 0))
+        set_euler(self.table[2], (0, 0, 1.57))
         self.table.append(load_pybullet(TABLE_URDF))
-        set_point(self.table[2], (0, 2, 0))
+        set_point(self.table[3], (0, 2, 0))
         self.shelf = create_shelf(w=SHELF_WIDTH, l=SHELF_LENGTH, h=SHELF_HEIGHT,
                                   set_point=(TABLE_POSE_X, TABLE_POSE_Y, TABLE_MAX_Z), sim_id=self.sim_id)
         self.shelf_placement = create_shelf_placement(w=SHELF_WIDTH, l=SHELF_LENGTH, h=0.01, color=BROWN)
@@ -233,10 +239,13 @@ class PackInShelfEnvironment(Environment):
                 set_point(boxes[i], (-1.8 + displacement_x, -1.4 + displacement_y * pow(-1, i), TABLE_MAX_Z + .15 / 2))
                 set_euler(boxes[i], (0, 0, 0))
                 displacement_x += 0.3
-            else:
+            elif i >= 5 and i < 10:
                 set_point(boxes[i], (-0.9 + displacement_x, -1.4 + displacement_y * pow(-1, i), TABLE_MAX_Z + .15 / 2))
                 set_euler(boxes[i], (0, 0, 0))
                 displacement_x += 0.3
+            else:
+                set_point(boxes[i], (1.9, 0.5, TABLE_MAX_Z + .15 / 2))
+                set_euler(boxes[i], (0, 0, 0))
 
         self.robot = create_pr2()
         set_base_values(self.robot, (0, 0, 0))
