@@ -243,8 +243,11 @@ class PackInShelfEnvironment(Environment):
                 set_point(boxes[i], (-0.9 + displacement_x, -1.4 + displacement_y * pow(-1, i), TABLE_MAX_Z + .15 / 2))
                 set_euler(boxes[i], (0, 0, 0))
                 displacement_x += 0.3
-            else:
+            elif i == 10:
                 set_point(boxes[i], (1.9, 0.5, TABLE_MAX_Z + .15 / 2))
+                set_euler(boxes[i], (0, 0, 0))
+            elif i == 11:
+                set_point(boxes[i], (1.9, 0.8, TABLE_MAX_Z + .15 / 2))
                 set_euler(boxes[i], (0, 0, 0))
 
         self.robot = create_pr2()
