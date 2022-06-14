@@ -735,8 +735,11 @@ def store_data(data, opt):
     db['steps'] = data._tot_steps
 
     path = join_paths(get_parent_dir(__file__), os.pardir, os.pardir, "data")
-    dbfile = open(path + '/data_{}_obj_{}'.format("rand" if opt.generalization else opt.num_objs,
-                                                  datetime.now().strftime("%Y_%m_%d_%H_%M_%S")), 'ab')
+    if opt.env_name == "namo":
+        env_info = opt.env_name
+    else:
+        env_info = "{}_obj".format("rand" if opt.generalization else opt.num_objs)
+    dbfile = open(path + '/data_{}_seed_{}'.format(env_info, opt.seed), 'ab')
     pickle.dump(db, dbfile)
     dbfile.close()
 

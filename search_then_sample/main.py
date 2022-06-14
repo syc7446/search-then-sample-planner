@@ -38,6 +38,8 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--env_name', type=str, default="packinshelf")
 parser.add_argument('--planner_name', type=str, default='backtrack_newsample')
 parser.add_argument('--learner_name', type=str, default='plan_feasibility')
+parser.add_argument('--learner_path', type=str, default='plan_feasibility')
+parser.add_argument('--cuda_id', type=int, default=0)
 parser.add_argument('--seed', type=int, default=0)
 parser.add_argument('--arm', type=str, default='left')
 parser.add_argument('--grasp_type', type=str, default='side')
@@ -55,9 +57,14 @@ print(opt)
 
 random.seed(opt.seed)
 np.random.seed(opt.seed)
-save_data = SaveData()
 
-for i in range(opt.num_probs):
+if opt.generalization:
+    num_objs = np.random.randint(5, opt.num_objs + 1, opt.num_probs)
+else:
+    num_objs = np.full(opt.num_probs, opt.num_objs)
+
+for i, num_obj in enumerate(num_objs):
+    save_data = SaveData()
     print("{}/{}".format(i + 1, opt.num_probs))
 
     sim_id = connect(use_gui=opt.use_gui)
@@ -69,7 +76,7 @@ for i in range(opt.num_probs):
     elif opt.env_name == "packinshelf":
         num_objs = np.random.randint(1, opt.num_objs + 1) if opt.generalization else opt.num_objs
         set_camera_pose(camera_point=PACKING_CAMERA_POINT, target_point=PACKING_TARGET_POINT)
-        env = PackInShelfEnvironment(num_objs=num_objs, sim_id=sim_id, seed=opt.seed)
+        env = PackInShelfEnvironment(num_obj, sim_id=sim_id, seed=opt.seed)
     elif opt.env_name == "namo":
         set_camera_pose(camera_point=NAMO_CAMERA_POINT, target_point=NAMO_TARGET_POINT)
         env = NAMOEnvironment(num_objs=opt.num_objs, sim_id=sim_id, seed=opt.seed)
@@ -87,13 +94,17 @@ for i in range(opt.num_probs):
         planner = BackjumpNewsamplePlanner(seed=opt.seed, timeout=constants.PLANNER_TIMEOUT,
                                            heuristic_name="PyperplanHAddHeuristic",
                                            num_samples_per_step=opt.num_samples_per_step,
-                                           learner_name=opt.learner_name)
+                                           learner_name=opt.learner_name,
+                                           learner_path=opt.learner_path,
+                                           cuda_id=opt.cuda_id)
     elif opt.planner_name == 'backjump_resample':
         planner = BackjumpResamplePlanner(seed=opt.seed, timeout=constants.PLANNER_TIMEOUT,
                                           heuristic_name="PyperplanHAddHeuristic",
                                           num_samples_per_step=opt.num_samples_per_step,
                                           num_resamples=opt.num_resamples,
-                                          learner_name=opt.learner_name)
+                                          learner_name=opt.learner_name,
+                                          learner_path=opt.learner_path,
+                                          cuda_id=opt.cuda_id)
 
     all_ndrs = ground_truth_ndrs.get_groundtruth_ndrs(opt.env_name, env)
 
@@ -108,12 +119,20 @@ for i in range(opt.num_probs):
             save_data.tot_add()
     except (PlanningExhausted, PlanningTimeout) as e:
         print(f'planning failed with error: {e}')
-    print('finished in {:.5f} seconds'.format(time.time()-start_time))
+    print('finished in {:.5f} seconds'.format(time.time() - start_time))
 
     if plan:
         if not os.path.exists('result'): os.makedirs('result')
-        with open('result/'+opt.planner_name+'_results.txt', 'a+') as f:
-            f.write('{}, {:.5f}\n'.format(count_motion_prob_solving, time.time()-start_time))
+        if opt.planner_name in ['backjump_newsample', 'backjump_resample']:
+            result_fname = opt.planner_name + '_' + opt.learner_path.split('/')[-1] + '.txt'
+        else:
+            result_fname = opt.planner_name + '.txt'
+        if opt.generalization:
+            result_fname = 'generalization_' + result_fname
+        result_fname = opt.env_name + '_' + result_fname
+        with open('result/' + result_fname, 'a+') as f:
+            f.write('{}, {}, {}, {}, {:.5f}\n'.format(opt.seed, i, num_obj, count_motion_prob_solving,
+                                                      time.time() - start_time))
             f.close()
 
     del env
@@ -121,5 +140,5 @@ for i in range(opt.num_probs):
     disconnect()
     print('problem {} is solved'.format(i))
 
-if opt.save_data:
-    store_data(data=save_data, opt=opt)
+    if opt.save_data:
+        store_data(data=save_data, opt=opt)
