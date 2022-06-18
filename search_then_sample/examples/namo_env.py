@@ -263,7 +263,7 @@ class NAMOEnvironment(Environment):
             p = 2.5
         if self._objs_to_obj_ids[obj] > 8:
             p = -0.5
-        if save_sampled_config: p.value = save_sampled_config
+        if save_sampled_config: p = save_sampled_config
         p_pose = get_joint_positions(self.robot, joints_from_names(self.robot, PR2_GROUPS['base']))[:2] + (p,)
         set_joint_positions(self.robot, [0, 1, 2], p_pose)
 

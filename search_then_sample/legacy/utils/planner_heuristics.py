@@ -79,7 +79,7 @@ class Heuristic:
 
     @abc.abstractmethod
     def __call__(self, node):
-        """See Planner.Node in backtrack_newsample_planner.py for definition of a node.
+        """See Planner.Node in backtrack_forgetting_planner.py for definition of a node.
         """
         raise NotImplementedError("Override me!")
 

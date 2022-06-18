@@ -14,10 +14,10 @@ import numpy as np
 from search_then_sample.examples.pick_place_env import PickPlaceEnvironment
 from search_then_sample.examples.pack_in_shelf_env import PackInShelfEnvironment
 from search_then_sample.examples.namo_env import NAMOEnvironment
-from search_then_sample.planner.backtrack_newsample_planner import BacktrackNewsamplePlanner, PlanningExhausted, PlanningTimeout
-from search_then_sample.planner.backtrack_resample_planner import BacktrackResamplePlanner
-from search_then_sample.planner.backjump_newsample_planner import BackjumpNewsamplePlanner
-from search_then_sample.planner.backjump_resample_planner import BackjumpResamplePlanner
+from search_then_sample.planner.backtrack_forgetting_planner import BacktrackForgettingPlanner, PlanningExhausted, PlanningTimeout
+from search_then_sample.planner.backtrack_batch_sampling_planner import BacktrackBatchSamplingPlanner
+from search_then_sample.planner.backjump_forgetting_planner import BackjumpForgettingPlanner
+from search_then_sample.planner.backjump_batch_sampling_planner import BackjumpBatchSamplingPlanner
 import search_then_sample.utils.ground_truth_ndrs as ground_truth_ndrs
 import search_then_sample.utils.constants as constants
 from search_then_sample.utils.search_then_sample_utils import SaveData, store_path, store_data
@@ -30,13 +30,13 @@ torch.set_printoptions(precision=3, sci_mode=False)
 '''
 Arguments
 env_name options: 'pickplace', 'packinshelf', 'namo'
-planner_name options: 'backtrack_newsample', 'backtrack_resample', 'backjump_newsample', 'backjump_resample'
+planner_name options: 'backtrack_forgetting', 'backtrack_batch_sampling', 'backjump_forgetting', 'backjump_batch_sampling'
 learner_name options: 'plan_feasibility', 'imitation'
 '''
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--env_name', type=str, default="packinshelf")
-parser.add_argument('--planner_name', type=str, default='backtrack_newsample')
+parser.add_argument('--env_name', type=str, default="namo")
+parser.add_argument('--planner_name', type=str, default='backtrack_batch_sampling')
 parser.add_argument('--learner_name', type=str, default='plan_feasibility')
 parser.add_argument('--learner_path', type=str, default='plan_feasibility')
 parser.add_argument('--cuda_id', type=int, default=0)
@@ -81,30 +81,30 @@ for i, num_obj in enumerate(num_objs):
         set_camera_pose(camera_point=NAMO_CAMERA_POINT, target_point=NAMO_TARGET_POINT)
         env = NAMOEnvironment(num_objs=opt.num_objs, sim_id=sim_id, seed=opt.seed)
 
-    if opt.planner_name == 'backtrack_newsample':
-        planner = BacktrackNewsamplePlanner(seed=opt.seed, timeout=constants.PLANNER_TIMEOUT,
+    if opt.planner_name == 'backtrack_forgetting':
+        planner = BacktrackForgettingPlanner(seed=opt.seed, timeout=constants.PLANNER_TIMEOUT,
+                                             heuristic_name="PyperplanHAddHeuristic",
+                                             num_samples_per_step=opt.num_samples_per_step)
+    elif opt.planner_name == 'backtrack_batch_sampling':
+        planner = BacktrackBatchSamplingPlanner(seed=opt.seed, timeout=constants.PLANNER_TIMEOUT,
+                                                heuristic_name="PyperplanHAddHeuristic",
+                                                num_samples_per_step=opt.num_samples_per_step,
+                                                num_resamples=opt.num_resamples)
+    elif opt.planner_name == 'backjump_forgetting':
+        planner = BackjumpForgettingPlanner(seed=opt.seed, timeout=constants.PLANNER_TIMEOUT,
                                             heuristic_name="PyperplanHAddHeuristic",
-                                            num_samples_per_step=opt.num_samples_per_step)
-    elif opt.planner_name == 'backtrack_resample':
-        planner = BacktrackResamplePlanner(seed=opt.seed, timeout=constants.PLANNER_TIMEOUT,
-                                           heuristic_name="PyperplanHAddHeuristic",
-                                           num_samples_per_step=opt.num_samples_per_step,
-                                           num_resamples=opt.num_resamples)
-    elif opt.planner_name == 'backjump_newsample':
-        planner = BackjumpNewsamplePlanner(seed=opt.seed, timeout=constants.PLANNER_TIMEOUT,
-                                           heuristic_name="PyperplanHAddHeuristic",
-                                           num_samples_per_step=opt.num_samples_per_step,
-                                           learner_name=opt.learner_name,
-                                           learner_path=opt.learner_path,
-                                           cuda_id=opt.cuda_id)
-    elif opt.planner_name == 'backjump_resample':
-        planner = BackjumpResamplePlanner(seed=opt.seed, timeout=constants.PLANNER_TIMEOUT,
-                                          heuristic_name="PyperplanHAddHeuristic",
-                                          num_samples_per_step=opt.num_samples_per_step,
-                                          num_resamples=opt.num_resamples,
-                                          learner_name=opt.learner_name,
-                                          learner_path=opt.learner_path,
-                                          cuda_id=opt.cuda_id)
+                                            num_samples_per_step=opt.num_samples_per_step,
+                                            learner_name=opt.learner_name,
+                                            learner_path=opt.learner_path,
+                                            cuda_id=opt.cuda_id)
+    elif opt.planner_name == 'backjump_batch_sampling':
+        planner = BackjumpBatchSamplingPlanner(seed=opt.seed, timeout=constants.PLANNER_TIMEOUT,
+                                               heuristic_name="PyperplanHAddHeuristic",
+                                               num_samples_per_step=opt.num_samples_per_step,
+                                               num_resamples=opt.num_resamples,
+                                               learner_name=opt.learner_name,
+                                               learner_path=opt.learner_path,
+                                               cuda_id=opt.cuda_id)
 
     all_ndrs = ground_truth_ndrs.get_groundtruth_ndrs(opt.env_name, env)
 
