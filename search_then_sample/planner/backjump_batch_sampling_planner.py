@@ -240,7 +240,8 @@ class BackjumpBatchSamplingPlanner:
                             plan[idx - 1] = None
                             env.save_path.delete()
                     if cur_idx == 0:
-                        return None, save_data  # backtracking exhausted
+                        if nr == self._num_resamples - 1:
+                            return None, save_data  # backtracking exhausted
                     cur_idx = backjump_idx
             # Should only get here if the skeleton was empty
             assert not skeleton
