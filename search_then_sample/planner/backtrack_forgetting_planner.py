@@ -157,7 +157,7 @@ class BacktrackForgettingPlanner:
                 except EnvironmentFailure as e:
                     print(f'WARNING: env failure in planning: {e.args[0]}')
                     traj[cur_idx+1] = state
-                    save_data.add_rest(base_states=None, arm_states=None, obj_states=None,
+                    save_data.add_rest(base_states=None, arm_states=None, obj_states=None, obj_ids=None,
                                        hand_hold=None, feasibilities=False)
                 cur_idx += 1
                 # Check literal sequence constraint. Backtrack if failed.
@@ -170,7 +170,7 @@ class BacktrackForgettingPlanner:
                     continue  # all good, no need to backtrack
                 cur_idx -= 1
             else:
-                save_data.add_rest(base_states=None, arm_states=None, obj_states=None,
+                save_data.add_rest(base_states=None, arm_states=None, obj_states=None, obj_ids=None,
                                    hand_hold=None, feasibilities=False)
 
             # Do backtracking

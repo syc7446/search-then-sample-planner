@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 import sys
-  
+
 # setting path
 sys.path.append('..')
 
@@ -13,7 +13,9 @@ import random
 import numpy as np
 from search_then_sample.examples.pick_place_env import PickPlaceEnvironment
 from search_then_sample.examples.pack_in_shelf_env import PackInShelfEnvironment
+# from search_then_sample.examples.pack_in_shelf_env_for_video import PackInShelfEnvironment # this is temporary to record the video
 from search_then_sample.examples.namo_env import NAMOEnvironment
+# from search_then_sample.examples.namo_env_for_video import NAMOEnvironment # this is temporary to record the video
 from search_then_sample.planner.backtrack_forgetting_planner import BacktrackForgettingPlanner, PlanningExhausted, PlanningTimeout
 from search_then_sample.planner.backtrack_batch_sampling_planner import BacktrackBatchSamplingPlanner
 from search_then_sample.planner.backjump_forgetting_planner import BackjumpForgettingPlanner
@@ -35,8 +37,8 @@ learner_name options: 'plan_feasibility', 'imitation'
 '''
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--env_name', type=str, default="namo")
-parser.add_argument('--planner_name', type=str, default='backtrack_batch_sampling')
+parser.add_argument('--env_name', type=str, default="packinshelf")
+parser.add_argument('--planner_name', type=str, default='backtrack_forgetting')
 parser.add_argument('--learner_name', type=str, default='plan_feasibility')
 parser.add_argument('--learner_path', type=str, default='plan_feasibility')
 parser.add_argument('--cuda_id', type=int, default=0)

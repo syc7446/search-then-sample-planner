@@ -65,6 +65,33 @@ def base_motion(robot, base_start, base_goal, teleport=False, obstacles=[], atta
         return base_path
 
 
+def arm_motion(robot, arm_start, arm_goal, arm, teleport=False, obstacles=[], attachments=[], custom_limits={}):
+    disabled_collisions = get_disabled_collisions(robot)
+    arm_joints = get_arm_joints(robot, arm)
+    set_joint_positions(robot, arm_joints, arm_start)
+    base_goal = arm_goal[:len(arm_joints)]
+    # TODO: hardcoded values to increase resolutions used in extension fn
+
+    if teleport:
+        set_joint_positions(robot, arm_joints, arm_start)
+        if any(pairwise_collision(robot, b) for b in obstacles):
+            return None
+        set_joint_positions(robot, arm_joints, base_goal)
+        if any(pairwise_collision(robot, b) for b in obstacles):
+            return None
+        return [arm_start, arm_goal]
+    else:
+        resolutions = 0.05 ** np.ones(len(arm_joints))
+        with LockRenderer(lock=False):
+            arm_path = plan_joint_motion(robot, arm_joints, arm_goal, obstacles=obstacles,
+                                         attachments=attachments, disabled_collisions=disabled_collisions,
+                                         self_collisions=False,
+                                         resolutions=resolutions, custom_limits=custom_limits,
+                                         restarts=2, max_iterations=25, smooth=25)
+        if not arm_path: set_joint_positions(robot, arm_joints, arm_start)
+        return arm_path
+
+
 def simple_direct_path_base_motion(robot, base_start, base_goal, teleport=False, obstacles=[], attachments=[],
                             custom_limits={}):
     disabled_collisions = get_disabled_collisions(robot)
@@ -103,6 +130,38 @@ def simple_direct_path_base_motion(robot, base_start, base_goal, teleport=False,
         base_path = None
     if not base_path: set_joint_positions(robot, base_joints, base_start)
     return base_path
+
+
+def get_stable_manual_gen(problem, collisions=True, **kwargs):
+    obstacles = problem.fixed if collisions else []
+    manual_body_pose = []
+    manual_body_pose.append(((0.11150483042001724, 1.8443114757537842, 0.7074999809265137), (0.0, 0.0, 0.15275177359580994, 0.9882646203041077)))
+    manual_body_pose.append(((-0.024299629032611847, 1.8851918649673462, 0.7074999809265137), (0.0, 0.0, 0.5342151522636414, 0.8453485369682312)))
+    manual_body_pose.append(((-0.1571858525276184, 1.8978041076660156, 0.7074999809265137), (0.0, 0.0, -0.6982966065406799, 0.7158085107803345)))
+    manual_body_pose.append(((-0.1974816119670868, 1.7997376012802124, 0.7074999809265137), (0.0, 0.0, 0.8826384544372559, 0.4700525403022766)))
+    manual_body_pose.append(((0.140473221316933632, 1.7847394847869873, 0.7074999809265137), (0.0, 0.0, -0.6524704694747925, 0.7578141689300537)))
+    manual_body_pose.append(((-0.07064237773418427, 1.7635848426818848, 0.7074999809265137), (0.0, 0.0, -0.6774644255638123, 0.7355555295944214)))
+    manual_body_pose.append(((-0.04096284881234169, 1.669626235961914, 0.7074999809265137), (0.0, 0.0, 0.9875448942184448, -0.15733756124973297)))
+    manual_body_pose.append(((0.1010371595621109, 1.6853487396240234, 0.7074999809265137), (0.0, 0.0, 0.2628512978553772, 0.9648363590240479)))
+    manual_body_pose.append(((0.135058495923876762, 1.618767490386963, 0.7074999809265137), (0.0, 0.0, 0.5342151522636414, 0.8453485369682312)))
+    manual_body_pose.append(((-0.14256032705307007, 1.6276129484176636, 0.7074999809265137), (0.0, 0.0, -0.6982966065406799, 0.7158085107803345)))
+    def gen(body, surface, index):
+        # TODO: surface poses are being sampled in pr2_belief
+        if surface is None:
+            surfaces = problem.surfaces
+        else:
+            surfaces = [surface]
+        while True:
+            surface = random.choice(surfaces) # TODO: weight by area
+            body_pose = manual_body_pose[index]
+            if body_pose is None:
+                break
+            p = Pose(body, body_pose, surface)
+            p.assign()
+            if not any(pairwise_collision(body, obst) for obst in obstacles if obst not in {body, surface}):
+                yield (p,)
+    # TODO: apply the acceleration technique here
+    return gen
 
 
 def get_ir_sampler(problem, custom_limits={}, max_attempts=25, collisions=True, collision_objs=[], learned=True):
@@ -286,6 +345,37 @@ def get_ik_ir_gen(problem, max_attempts=25, learned=True, teleport=False, **kwar
             if ir_outputs is None:
                 continue
             ik_outputs = ik_fn(*(inputs + ir_outputs))
+            if ik_outputs is None:
+                continue
+            print('IK attempts:', attempts)
+            yield ir_outputs + ik_outputs
+            return
+            # if not p.init:
+            #    return
+
+    return gen
+
+
+def get_ik_ir_given_q_gen(problem, max_attempts=25, learned=True, teleport=False, **kwargs):
+    # TODO: compose using general fn
+    ir_sampler = get_ir_sampler(problem, learned=learned, max_attempts=max_attempts, **kwargs)
+    ik_fn = get_ik_fn(problem, teleport=teleport, **kwargs)
+
+    def gen(*inputs):
+        b, a, p, g, q = inputs
+        ir_generator = ir_sampler(*inputs[:4])
+        attempts = 0
+        while True:
+            if max_attempts <= attempts:
+                if not p.init:
+                    return
+                attempts = 0
+                yield None
+            attempts += 1
+            ir_outputs = (q,)
+            if ir_outputs is None:
+                continue
+            ik_outputs = ik_fn(*(inputs[:4] + ir_outputs))
             if ik_outputs is None:
                 continue
             print('IK attempts:', attempts)
@@ -729,6 +819,7 @@ def store_data(data, opt):
     db['base_states'] = data._tot_base_states
     db['arm_states'] = data._tot_arm_states
     db['obj_states'] = data._tot_obj_states
+    db['obj_ids'] = data._tot_obj_ids
     db['configs'] = data._tot_configs
     db['hand_hold'] = data._tot_hand_hold
     db['feasibilities'] = data._tot_feasibilities
@@ -750,16 +841,19 @@ class SaveData(object):
         self._tot_base_states = []
         self._tot_arm_states = []
         self._tot_obj_states = []
+        self._tot_obj_ids = []
         self._tot_configs = []
         self._tot_hand_hold = []
         self._tot_feasibilities = []
+        self._tot_worlds = []
         self._tot_steps = []
 
-    def init(self, sym_actions, base_states, arm_states, obj_states, configs, hand_hold, feasibilities, steps):
+    def init(self, sym_actions, base_states, arm_states, obj_states, obj_ids, configs, hand_hold, feasibilities, steps):
         self._sym_actions = []
         self._base_states = []
         self._arm_states = []
         self._obj_states = []
+        self._obj_ids = []
         self._configs = []
         self._hand_hold = []
         self._feasibilities = []
@@ -768,6 +862,7 @@ class SaveData(object):
         self._base_states.append(base_states)
         self._arm_states.append(arm_states)
         self._obj_states.append(obj_states)
+        self._obj_ids.append(obj_ids)
         self._configs.append(configs)
         self._hand_hold.append(hand_hold)
         self._feasibilities.append(feasibilities)
@@ -778,10 +873,11 @@ class SaveData(object):
         self._configs.append(configs)
         self._steps.append(steps)
 
-    def add_rest(self, base_states, arm_states, obj_states, hand_hold, feasibilities):
+    def add_rest(self, base_states, arm_states, obj_states, obj_ids, hand_hold, feasibilities):
         self._base_states.append(base_states)
         self._arm_states.append(arm_states)
         self._obj_states.append(obj_states)
+        self._obj_ids.append(obj_ids)
         self._hand_hold.append(hand_hold)
         self._feasibilities.append(feasibilities)
 
@@ -790,6 +886,7 @@ class SaveData(object):
         self._tot_base_states.append(self._base_states)
         self._tot_arm_states.append(self._arm_states)
         self._tot_obj_states.append(self._obj_states)
+        self._tot_obj_ids.append(self._obj_ids)
         self._tot_configs.append(self._configs)
         self._tot_hand_hold.append(self._hand_hold)
         self._tot_feasibilities.append(self._feasibilities)

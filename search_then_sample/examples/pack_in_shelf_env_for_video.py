@@ -1,17 +1,18 @@
 import copy
+import pickle
 
 import search_then_sample.utils.structs as structs
 from search_then_sample.utils.env_base import Environment
 from search_then_sample.utils.utils import WORLD
-from search_then_sample.utils.search_then_sample_utils import get_ik_ir_gen, SavePath, \
-    SINGLE_ROOM, create_shelf, create_shelf_placement, choose_grasps, NARROW_TABLE
+from search_then_sample.utils.search_then_sample_utils import get_ik_ir_gen, get_ik_ir_given_q_gen, SavePath, \
+    SINGLE_ROOM, create_shelf, create_shelf_placement, choose_grasps, base_motion, arm_motion, get_stable_manual_gen, NARROW_TABLE
 from search_then_sample.constants import TABLE_POSE_X, TABLE_POSE_Y, SHELF_LENGTH, SHELF_WIDTH, SHELF_HEIGHT, \
     SHELF_REACHABLE_MARGIN
 
 from pybullet_planning.pybullet_tools.utils import get_pose, get_joint_positions, joints_from_names, is_placement, \
-    set_base_values, load_pybullet, create_box, set_point, set_euler, TABLE_URDF, WorldSaver, BROWN
+    set_base_values, load_pybullet, create_box, set_point, set_euler, set_joint_positions, TABLE_URDF, WorldSaver, BROWN
 from pybullet_planning.pybullet_tools.pr2_utils import get_other_arm, get_carry_conf, set_arm_conf, open_arm, PR2_GROUPS, \
-    arm_conf, close_arm, REST_LEFT_ARM
+    arm_conf, close_arm, get_arm_joints, REST_LEFT_ARM, SIDE_HOLDING_LEFT_ARM
 from pybullet_planning.pybullet_tools.pr2_primitives import get_stable_gen, get_grasp_gen, Pose
 from pybullet_planning.pybullet_tools.pr2_problems import create_pr2, create_floor, Problem, TABLE_MAX_Z
 
@@ -108,7 +109,7 @@ class PackInShelfEnvironment(Environment):
         self.save_path = SavePath(self.robot, self.arm)
 
         self.grasp_gen_fn = get_grasp_gen(self.problem, collisions=True)
-        self.placement_gen_fn = get_stable_gen(self.problem)
+        self.placement_manual_gen_fn = get_stable_manual_gen(self.problem)
 
         for i, obj in enumerate(self._objs):
             self._objs_to_obj_ids[obj] = self.problem.movable[i]
@@ -126,6 +127,28 @@ class PackInShelfEnvironment(Environment):
                        arm_states=world_state["joints"], obj_states=[state[obj]['pose'] for obj in self._objs], obj_ids=None,
                        configs=None, hand_hold=world_state["cur_holding_tf"], feasibilities=None, steps=-1)
         saved_world = WorldSaver()
+
+        # Video recording
+        # file = open('data/data_for_video', 'rb')
+        # data = pickle.load(file)
+        # cur_step = -1
+        # config_steps = []
+        # for i in range(len(data['steps'][0])):
+        #     if i == 0: continue
+        #     if cur_step < data['steps'][0][i] - 1:
+        #         cur_step = data['steps'][0][i] - 1
+        #         config_steps.append(i - 1)
+        #     elif cur_step > data['steps'][0][i] - 1:
+        #         cur_step -= 1
+        #         config_steps.pop()
+        # config_steps.append(i)
+        # self.configs = []
+        # self.obj_ids = []
+        # for i in range(len(config_steps)):
+        #     self.configs.append(data['configs'][0][config_steps[i]])
+        #     self.obj_ids.append(data['obj_ids'][0][config_steps[i]])
+        self.config_step = 0
+
         return state, self.robot, save_data, saved_world
 
     def get_save_path(self):
@@ -139,8 +162,11 @@ class PackInShelfEnvironment(Environment):
         movable_obstacles = copy.deepcopy(self.problem.movable)
         movable_obstacles.remove(self._objs_to_obj_ids[obj])
         collision_objs = self.problem.fixed + movable_obstacles
+        # ik_ir_given_q_fn = get_ik_ir_given_q_gen(self.problem,
+        #                                          max_attempts=25, teleport=False,
+        #                                          custom_limits=self.custom_limits, collision_objs=collision_objs)
         ik_ir_fn = get_ik_ir_gen(self.problem,
-                                 max_attempts=25, teleport=True,
+                                 max_attempts=25, teleport=False,
                                  custom_limits=self.custom_limits, collision_objs=collision_objs)
 
         if not pre_saved_world: saved_world = WorldSaver()
@@ -151,55 +177,76 @@ class PackInShelfEnvironment(Environment):
         base_start = get_joint_positions(self.robot, joints_from_names(self.robot, PR2_GROUPS['base']))
 
         # Place
-        placement_gen = self.placement_gen_fn(self._objs_to_obj_ids[obj], self.shelf_placement)
+        placement_gen = self.placement_manual_gen_fn(self._objs_to_obj_ids[obj], self.shelf_placement, self.config_step)
         grasps = list(self.grasp_gen_fn(self._objs_to_obj_ids[obj]))
 
         (p,) = next(placement_gen)
+        # p = self.configs[self.config_step][0]
         if save_sampled_config: p = save_sampled_config[0]
-        (g,) = choose_grasps(p, grasps) # TODO: hacked # random.choice(grasps)
+        (g,) = choose_grasps(p, grasps)  # TODO: hacked # random.choice(grasps)
+        # g = self.configs[self.config_step][1]
         if save_sampled_config: g = save_sampled_config[1]
         attachment = g.get_attachment(self.robot, self.arm)
+
+        # Place
+        # place_output = next(ik_ir_given_q_fn(self.arm, self._objs_to_obj_ids[obj], p, g,
+        #                                      self.configs[self.config_step][2]), None)
         place_output = next(ik_ir_fn(self.arm, self._objs_to_obj_ids[obj], p, g), None)
         if not place_output:
             print('Plan fails: place in IsValidPickPlace')
             saved_world.restore()
             return [p, g, None]
+        base_after_place_start = get_joint_positions(self.robot, joints_from_names(self.robot, PR2_GROUPS['base']))
+        base_after_place_goal = (place_output[0].values[0],) + (place_output[0].values[1] - 0.8,) + (1.57,)
+        back_base_after_place_path = base_motion(self.robot, base_after_place_start, base_after_place_goal, teleport=False,
+                                                 obstacles=self.problem.fixed, custom_limits=self.custom_limits)
+        set_joint_positions(self.robot, [0, 1, 2], back_base_after_place_path[-1])
+        arm_joints = get_arm_joints(self.robot, self.arm)
+        arm_start = get_joint_positions(self.robot, arm_joints)
+        arm_goal = tuple(arm_conf('left', SIDE_HOLDING_LEFT_ARM))
+        arm_after_place_path = arm_motion(self.robot, arm_start, arm_goal, self.arm, teleport=False,
+                                          obstacles=self.problem.fixed, custom_limits=self.custom_limits)
         result_saved_world = WorldSaver()
 
         # Pick
-        # pick_output = next(ik_ir_fn(self.arm, self._objs_to_obj_ids[obj], obj_pose, g), None)
-        # if not pick_output:
-        #     print('Plan fails: pick in IsValidPickPlace')
-        #     saved_world.restore()
-        #     return g.value
-        #
-        # # Base motion for pick and place
-        # pick_base_path = base_motion(self.robot, base_start, pick_output[0].values, teleport=True,
-        #                              obstacles=self.problem.fixed, custom_limits=self.custom_limits)
-        # if not pick_base_path:
-        #     print('Plan fails: base pick motion in IsValidPickPlace')
-        #     saved_world.restore()
-        #     return g.value
-        # set_joint_positions(self.robot, [0, 1, 2], pick_base_path[-1])
-        # base_start = get_joint_positions(self.robot, joints_from_names(self.robot, PR2_GROUPS['base']))
-        # place_base_path = base_motion(self.robot, base_start, place_output[0].values,
-        #                               teleport=True, obstacles=self.problem.fixed,
-        #                               attachments=[attachment], custom_limits=self.custom_limits)
-        # if not place_base_path:
-        #     print('Plan fails: base motion in IsValidPickPlace')
-        #     saved_world.restore()
-        #     return p.value
-        # set_joint_positions(self.robot, [0, 1, 2], place_base_path[-1])
-        #
-        # pick_arm_path = [pick_output[1].commands[0].path[i].values for i in range(len(pick_output[1].commands[0].path))]
-        # place_arm_path = [place_output[1].commands[0].path[i].values for i in range(len(place_output[1].commands[0].path))]
-        # self.save_path.add(actions=['base', 'arm', 'base', 'arm'],
-        #                    paths=[pick_base_path, pick_arm_path, place_base_path, place_arm_path],
-        #                    attachments=[None, None, attachment, attachment])
+        pick_output = next(ik_ir_fn(self.arm, self._objs_to_obj_ids[obj], obj_pose, g), None)
+        if not pick_output:
+            print('Plan fails: pick in IsValidPickPlace')
+            saved_world.restore()
+            return [p, g, place_output[0]]
+        arm_start = get_joint_positions(self.robot, arm_joints)
+        arm_goal = tuple(arm_conf('left', SIDE_HOLDING_LEFT_ARM))
+        arm_after_pick_path = arm_motion(self.robot, arm_start, arm_goal, self.arm, teleport=False,
+                                         obstacles=self.problem.fixed,
+                                         attachments=[attachment], custom_limits=self.custom_limits)
 
-        # TODO: save_path is temporally not used so remove the below later!
-        self.save_path.add(actions=[], paths=[], attachments=[])
+        # Base motion for pick and place
+        saved_world.restore()
+        pick_base_path = base_motion(self.robot, base_start, pick_output[0].values, teleport=False,
+                                     obstacles=self.problem.fixed, custom_limits=self.custom_limits)
+        if not pick_base_path:
+            print('Plan fails: base pick motion in IsValidPickPlace')
+            saved_world.restore()
+            return [p, g, place_output[0]]
+        set_joint_positions(self.robot, [0, 1, 2], pick_base_path[-1])
+        base_start = get_joint_positions(self.robot, joints_from_names(self.robot, PR2_GROUPS['base']))
+        place_base_path = base_motion(self.robot, base_start, place_output[0].values,
+                                      teleport=False, obstacles=self.problem.fixed,
+                                      attachments=[attachment], custom_limits=self.custom_limits)
+        if not place_base_path:
+            print('Plan fails: base place motion in IsValidPickPlace')
+            saved_world.restore()
+            return [p, g, place_output[0]]
+        set_joint_positions(self.robot, [0, 1, 2], place_base_path[-1])
 
+        pick_arm_path = [pick_output[1].commands[0].path[i].values for i in range(len(pick_output[1].commands[0].path))]
+        place_arm_path = [place_output[1].commands[0].path[i].values for i in range(len(place_output[1].commands[0].path))]
+        self.save_path.add(actions=['base', 'arm', 'arm', 'base', 'arm', 'base', 'arm'],
+                           paths=[pick_base_path, pick_arm_path, arm_after_pick_path,
+                                  place_base_path, place_arm_path, back_base_after_place_path, arm_after_place_path],
+                           attachments=[None, None, attachment, attachment, attachment, None, None])
+
+        self.config_step += 1
         result_saved_world.restore()
         basex, basey, basez = place_output[0].values
         gripx, gripy, gripz = place_output[3]
@@ -222,9 +269,9 @@ class PackInShelfEnvironment(Environment):
         self.table.append(load_pybullet(TABLE_URDF))
         set_point(self.table[2], (0, 2, 0))
         self.shelf = create_shelf(w=SHELF_WIDTH, l=SHELF_LENGTH, h=SHELF_HEIGHT,
-                                  set_point=(TABLE_POSE_X, TABLE_POSE_Y, TABLE_MAX_Z), sim_id=self.sim_id)
+                                  set_point=(TABLE_POSE_X, TABLE_POSE_Y - 0.05, TABLE_MAX_Z), sim_id=self.sim_id)
         self.shelf_placement = create_shelf_placement(w=SHELF_WIDTH, l=SHELF_LENGTH, h=0.01, color=BROWN)
-        set_point(self.shelf_placement, (TABLE_POSE_X, TABLE_POSE_Y, TABLE_MAX_Z))
+        set_point(self.shelf_placement, (TABLE_POSE_X, TABLE_POSE_Y - 0.05, TABLE_MAX_Z))
         self.reachable_point = (-SHELF_REACHABLE_MARGIN, 0.0, 0.0)
 
         boxes = []

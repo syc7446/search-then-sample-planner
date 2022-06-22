@@ -235,7 +235,7 @@ class NAMOEnvironment(Environment):
                                       get_euler(self._objs_to_obj_ids[obj])[-1],
                                       self.reachable_point)
         base_reach_path = base_motion(self.robot, base_start, base_goal,
-                                      teleport=True,
+                                      teleport=False,
                                       obstacles=[], # self.fixed_obstacles + [self.target_box], # TODO: simplifed
                                       custom_limits=self.custom_limits)
         if not base_reach_path:
@@ -247,30 +247,53 @@ class NAMOEnvironment(Environment):
         set_arm_conf(self.robot, 'left', BOX_HOLDING_LEFT_ARM)
         set_arm_conf(self.robot, 'right', rightarm_from_leftarm(BOX_HOLDING_LEFT_ARM))
         attachment = create_attachment(self.robot, get_gripper_link(self.robot, 'left'), self._objs_to_obj_ids[obj])
+        pre_arm_after_reach = [get_joint_positions(self.robot, joints_from_names(self.robot, PR2_GROUPS['left_arm'])),
+                               get_joint_positions(self.robot, joints_from_names(self.robot, PR2_GROUPS['right_arm']))]
         set_arm_conf(self.robot, 'left', POST_BOX_HOLDING_LEFT_ARM)
         set_arm_conf(self.robot, 'right', rightarm_from_leftarm(POST_BOX_HOLDING_LEFT_ARM))
         attachment.assign()
+        post_arm_after_reach = [get_joint_positions(self.robot, joints_from_names(self.robot, PR2_GROUPS['left_arm'])),
+                                get_joint_positions(self.robot, joints_from_names(self.robot, PR2_GROUPS['right_arm']))]
 
         p = random.uniform(-3.14, 3.14)
         if self._objs_to_obj_ids[obj] == 4:
-            p = random.uniform(2, 3.14)
+            p = 2.4
         if self._objs_to_obj_ids[obj] == 5:
-            p = random.uniform(2.2, 3.14)
-        if self._objs_to_obj_ids[obj] == 6:
-            p = random.uniform(-2, 2)
-        if self._objs_to_obj_ids[obj] == 7:
-            p = random.uniform(-1, 1.5)
-        if self._objs_to_obj_ids[obj] == 8:
             p = 2.5
-        if self._objs_to_obj_ids[obj] > 8:
-            p = -0.5
-        if save_sampled_config: p = save_sampled_config[-1] # last element in save_sampled_config corresponds to yaw angle
+        if self._objs_to_obj_ids[obj] == 6:
+            p = 0.5
+        if self._objs_to_obj_ids[obj] == 7:
+            p = 2.45
+        if self._objs_to_obj_ids[obj] == 8:
+            p = 3
+        if self._objs_to_obj_ids[obj] == 9:
+            p = 0
+        if self._objs_to_obj_ids[obj] == 10:
+            p = 2.4
+        if self._objs_to_obj_ids[obj] == 11:
+            p = -0.57
+        if self._objs_to_obj_ids[obj] == 12:
+            p = 2.57
+        if self._objs_to_obj_ids[obj] == 13:
+            p = -0.25
+        if save_sampled_config: p = save_sampled_config[-1]
         p_pose = get_joint_positions(self.robot, joints_from_names(self.robot, PR2_GROUPS['base']))[:2] + (p,)
-        set_joint_positions(self.robot, [0, 1, 2], p_pose)
+        base_start = get_joint_positions(self.robot, joints_from_names(self.robot, PR2_GROUPS['base']))
+        base_goal = p_pose
+        base_clear_path = base_motion(self.robot, base_start, base_goal,
+                                      teleport=False,
+                                      obstacles=self.fixed_obstacles, custom_limits=self.custom_limits)
+        if not base_clear_path:
+            print('Plan fails: base clear motion in IsValidClear')
+            saved_world.restore()
+            return get_pose(self._objs_to_obj_ids[obj])
+        set_joint_positions(self.robot, [0, 1, 2], base_goal)
 
         set_arm_conf(self.robot, 'left', BOX_HOLDING_LEFT_ARM)
         set_arm_conf(self.robot, 'right', rightarm_from_leftarm(BOX_HOLDING_LEFT_ARM))
         attachment.assign()
+        pre_arm_after_clear = [get_joint_positions(self.robot, joints_from_names(self.robot, PR2_GROUPS['left_arm'])),
+                               get_joint_positions(self.robot, joints_from_names(self.robot, PR2_GROUPS['right_arm']))]
 
         # if any(pairwise_collision(self._objs_to_obj_ids[obj], o) for o in
         #        self.fixed_obstacles + [self.target_box] + [b for b in self.boxes if b != self._objs_to_obj_ids[obj]]):
@@ -279,8 +302,13 @@ class NAMOEnvironment(Environment):
         #     return p_pose
         set_arm_conf(self.robot, 'left', PRE_BOX_HOLDING_LEFT_ARM)
         set_arm_conf(self.robot, 'right', rightarm_from_leftarm(PRE_BOX_HOLDING_LEFT_ARM))
+        post_arm_after_clear = [get_joint_positions(self.robot, joints_from_names(self.robot, PR2_GROUPS['left_arm'])),
+                                get_joint_positions(self.robot, joints_from_names(self.robot, PR2_GROUPS['right_arm']))]
 
-        self.save_path.add(actions=['base'], paths=base_reach_path+[p_pose], attachments=[attachment])
+        self.save_path.add(actions=['base', 'both_arms', 'both_arms', 'base', 'both_arms', 'both_arms'],
+                           paths=[base_reach_path, pre_arm_after_reach, post_arm_after_reach,
+                                  base_clear_path, pre_arm_after_clear, post_arm_after_clear],
+                           attachments=[None, None, attachment, attachment, attachment, None])
 
         result_saved_world = WorldSaver()
         basex, basey, baset = p_pose
@@ -299,7 +327,7 @@ class NAMOEnvironment(Environment):
                                       get_euler(self._target_to_obj_id)[-1],
                                       self.reachable_point)
         base_reach_path = base_motion(self.robot, base_start, base_goal,
-                                      teleport=True,
+                                      teleport=False,
                                       obstacles=self.fixed_obstacles, custom_limits=self.custom_limits)
         if not base_reach_path:
             print('Plan fails: base reach motion in IsValidPickPlace')
@@ -310,9 +338,13 @@ class NAMOEnvironment(Environment):
         set_arm_conf(self.robot, 'left', BOX_HOLDING_LEFT_ARM)
         set_arm_conf(self.robot, 'right', rightarm_from_leftarm(BOX_HOLDING_LEFT_ARM))
         attachment = create_attachment(self.robot, get_gripper_link(self.robot, 'left'), self._target_to_obj_id)
+        pre_arm_after_reach = [get_joint_positions(self.robot, joints_from_names(self.robot, PR2_GROUPS['left_arm'])),
+                               get_joint_positions(self.robot, joints_from_names(self.robot, PR2_GROUPS['right_arm']))]
         set_arm_conf(self.robot, 'left', POST_BOX_HOLDING_LEFT_ARM)
         set_arm_conf(self.robot, 'right', rightarm_from_leftarm(POST_BOX_HOLDING_LEFT_ARM))
         attachment.assign()
+        post_arm_after_reach = [get_joint_positions(self.robot, joints_from_names(self.robot, PR2_GROUPS['left_arm'])),
+                                get_joint_positions(self.robot, joints_from_names(self.robot, PR2_GROUPS['right_arm']))]
 
         rp_gen_fn = get_namo_rp_gen(self.fixed_obstacles + [self.robot] + self.boxes)
         rp_gen = rp_gen_fn(self._target_to_obj_id, self.goal_placement)
@@ -327,9 +359,9 @@ class NAMOEnvironment(Environment):
         # base_clear_path = base_motion(self.robot, base_start, base_goal,
         #                               attachments=[attachment], obstacles=self.fixed_obstacles + self.boxes,
         #                               custom_limits=self.custom_limits)
-        base_clear_path = simple_direct_path_base_motion(self.robot, base_start, base_goal,
-                                                         attachments=[attachment], obstacles=self.fixed_obstacles[1:] + self.boxes,
-                                                         custom_limits=self.custom_limits)
+        base_clear_path = base_motion(self.robot, base_start, base_goal,
+                                      attachments=[attachment], obstacles=self.fixed_obstacles[1:] + self.boxes,
+                                      custom_limits=self.custom_limits)
         if not base_clear_path:
             print('Plan fails: base clear motion in IsValidPickPlace')
             saved_world.restore()
@@ -339,10 +371,17 @@ class NAMOEnvironment(Environment):
         set_arm_conf(self.robot, 'left', BOX_HOLDING_LEFT_ARM)
         set_arm_conf(self.robot, 'right', rightarm_from_leftarm(BOX_HOLDING_LEFT_ARM))
         attachment.assign()
+        pre_arm_after_goal = [get_joint_positions(self.robot, joints_from_names(self.robot, PR2_GROUPS['left_arm'])),
+                              get_joint_positions(self.robot, joints_from_names(self.robot, PR2_GROUPS['right_arm']))]
         set_arm_conf(self.robot, 'left', PRE_BOX_HOLDING_LEFT_ARM)
         set_arm_conf(self.robot, 'right', rightarm_from_leftarm(PRE_BOX_HOLDING_LEFT_ARM))
+        post_arm_after_goal = [get_joint_positions(self.robot, joints_from_names(self.robot, PR2_GROUPS['left_arm'])),
+                               get_joint_positions(self.robot, joints_from_names(self.robot, PR2_GROUPS['right_arm']))]
 
-        self.save_path.add(actions=['base'], paths=base_reach_path+base_clear_path, attachments=[attachment])
+        self.save_path.add(actions=['base', 'both_arms', 'both_arms', 'base', 'both_arms', 'both_arms'],
+                           paths=[base_reach_path, pre_arm_after_reach, post_arm_after_reach,
+                                  base_clear_path, pre_arm_after_goal, post_arm_after_goal],
+                           attachments=[None, None, attachment, attachment, attachment, None])
 
         result_saved_world = WorldSaver()
         basex, basey, baset = base_clear_path[-1]
@@ -371,7 +410,7 @@ class NAMOEnvironment(Environment):
         for i in range(self._num_objs):
             self.boxes.append(create_box(BOX_SIZE, BOX_SIZE, BOX_SIZE, color=BLUE))
             if i == 0:
-                set_point(self.boxes[i], (0.6, 1.8, BOX_SIZE / 2))
+                set_point(self.boxes[i], (0.4, 1.6, BOX_SIZE / 2))
                 set_euler(self.boxes[i], (0.0, 0.0, 1.4))
             elif i == 1:
                 set_point(self.boxes[i], (0.8, 2.1, BOX_SIZE / 2))
@@ -383,22 +422,22 @@ class NAMOEnvironment(Environment):
                 set_point(self.boxes[i], (1.3, 3.0, BOX_SIZE / 2))
                 set_euler(self.boxes[i], (0.0, 0.0, 1.4))
             elif i == 4:
-                set_point(self.boxes[i], (1.0, 3.8, BOX_SIZE / 2))
+                set_point(self.boxes[i], (1.6, 4.0, BOX_SIZE / 2))
                 set_euler(self.boxes[i], (0.0, 0.0, 1.57))
             elif i == 5:
                 set_point(self.boxes[i], (2.0, 4.5, BOX_SIZE / 2))
                 set_euler(self.boxes[i], (0.0, 0.0, 1.3))
             elif i == 6:
-                set_point(self.boxes[i], (1.7, 5.2, BOX_SIZE / 2))
+                set_point(self.boxes[i], (1.5, 5.3, BOX_SIZE / 2))
                 set_euler(self.boxes[i], (0.0, 0.0, 2.07))
             elif i == 7:
                 set_point(self.boxes[i], (2.4, 6.0, BOX_SIZE / 2))
                 set_euler(self.boxes[i], (0.0, 0.0, 1.87))
             elif i == 8:
-                set_point(self.boxes[i], (3.0, 6.9, BOX_SIZE / 2))
+                set_point(self.boxes[i], (2.8, 7.0, BOX_SIZE / 2))
                 set_euler(self.boxes[i], (0.0, 0.0, 1.6))
             elif i == 9:
-                set_point(self.boxes[i], (3.8, 7.4, BOX_SIZE / 2))
+                set_point(self.boxes[i], (3.8, 7.6, BOX_SIZE / 2))
                 set_euler(self.boxes[i], (0.0, 0.0, 0.9))
 
         # Target box
@@ -406,7 +445,7 @@ class NAMOEnvironment(Environment):
         set_point(self.target_box, (ROOM_WIDTH / 2 + ROOM_WIDTH / 4, ROOM_HEIGHT / 2 + ROOM_HEIGHT / 4, BOX_SIZE / 2))
 
         # Fixed obstacles
-        num_fixed_boxes = 25
+        num_fixed_boxes = 27
         fixed_boxes = []
         for i in range(num_fixed_boxes):
             fixed_boxes.append(create_box(BOX_SIZE, BOX_SIZE, BOX_SIZE, color=WHITE))
@@ -420,7 +459,7 @@ class NAMOEnvironment(Environment):
                 set_point(fixed_boxes[i], (4.0, 5.2, BOX_SIZE / 2))
                 set_euler(fixed_boxes[i], (0.0, 0.0, 1.2))
             elif i == 3:
-                set_point(fixed_boxes[i], (4.1, 6.6, BOX_SIZE / 2))
+                set_point(fixed_boxes[i], (4.6, 6.4, BOX_SIZE / 2))
                 set_euler(fixed_boxes[i], (0.0, 0.0, 0.4))
             elif i == 4:
                 set_point(fixed_boxes[i], (3.9, 5.9, BOX_SIZE / 2))
@@ -483,8 +522,14 @@ class NAMOEnvironment(Environment):
                 set_point(fixed_boxes[i], (2.5, 9.6, BOX_SIZE / 2))
                 set_euler(fixed_boxes[i], (0.0, 0.0, -0.4))
             elif i == 24:
-                set_point(fixed_boxes[i], (1.3, 0.5, BOX_SIZE / 2))
+                set_point(fixed_boxes[i], (1.7, 0.5, BOX_SIZE / 2))
                 set_euler(fixed_boxes[i], (0.0, 0.0, -0.4))
+            elif i == 25:
+                set_point(fixed_boxes[i], (3.1, 3.9, BOX_SIZE / 2))
+                set_euler(fixed_boxes[i], (0.0, 0.0, -0.4))
+            elif i == 26:
+                set_point(fixed_boxes[i], (2.7, 3.2, BOX_SIZE / 2))
+                set_euler(fixed_boxes[i], (0.0, 0.0, 0.7))
         self.fixed_obstacles = [room] + fixed_boxes
 
         return Problem(robot=self.robot, movable=self.boxes+[self.target_box])
