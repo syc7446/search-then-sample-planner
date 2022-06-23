@@ -115,17 +115,20 @@ class BackjumpBatchSamplingPlanner:
             if env.literal_goal.issubset(node.lits):
                 num_sampling += 1
                 assert node.lits == node.lits_sequence[-1]
-                plan, save_data = self._sample_continuous_values(
-                    env, state, node.skeleton, node.constraints,
-                    node.lits_sequence, rng_sampler, start_time, save_data)
-                if plan is not None:
-                    print("Success! expanded {} skeletons (sampled for {}), "
-                          "found plan of length {}: {}".format(
-                              num_expanded, num_sampling, len(plan), plan))
-                    print('Total number of motion problems solved', self._count_motion_prob_solving)
-                    return plan, env.get_save_path(), save_data, self._count_motion_prob_solving
-                else:
-                    print('Symbolic plan failed so move onto the next one.')
+                for nr in range(self._num_resamples):
+                    plan, save_data = self._sample_continuous_values(
+                        env, state, node.skeleton, node.constraints,
+                        node.lits_sequence, rng_sampler, start_time, save_data)
+                    if plan is not None:
+                        print("Success! expanded {} skeletons (sampled for {}), "
+                              "found plan of length {}: {}".format(
+                                  num_expanded, num_sampling, len(plan), plan))
+                        print('Total number of motion problems solved', self._count_motion_prob_solving)
+                        return plan, env.get_save_path(), save_data, self._count_motion_prob_solving
+                    else:
+                        print('Current batch sampling failed so move onto the next batch sampling.')
+                        save_data.reinit()
+                print('Symbolic plan failed so move onto the next one.')
             else:
                 # Generate successors.
                 for child_node in self._get_successors(node):
@@ -150,103 +153,101 @@ class BackjumpBatchSamplingPlanner:
                                   constraints, lits_sequence, rng, start_time, save_data):
         """Backjumping search over continuous values.
         """
-        for nr in range(self._num_resamples):
-            save_sampled_config = [[None for _ in range(self._num_samples_per_step)] for _ in range(len(skeleton))]
-            assert len(skeleton) == len(constraints)
-            num_sample_tries = 0
-            cur_idx = 0
-            num_tries = [0 for _ in skeleton]
-            saved_worlds = [None for _ in skeleton]
-            idx_to_max_num_tries = [self._num_samples_per_step \
-                if any(v.is_continuous for v in a.variables) \
-                else 1 for a in skeleton]
-            plan = [None for _ in skeleton]
-            traj = [start_state]+[None for _ in skeleton]
-            while cur_idx < len(skeleton):
-                if time.time()-start_time > self._timeout:
-                    raise PlanningTimeout("Timed out!")
-                assert num_tries[cur_idx] < idx_to_max_num_tries[cur_idx]
-                print("Planner at {} step: num trials {}".format(cur_idx, num_tries))
-                # Good debug point #2: if you have a skeleton that you think is
-                # reasonable, but sampling isn't working, print num_tries here to
-                # see at what step the backtracking search is getting stuck.
-                num_tries[cur_idx] += 1
-                state = traj[cur_idx]
-                skel_act = skeleton[cur_idx]
-                constr_set = constraints[cur_idx]
-                if cur_idx > 0:
-                    act_args, saved_world, sampled_config = self._sample_action_args(env, state, skel_act,
-                                                                                     constr_set, rng, saved_worlds[cur_idx - 1],
-                                                                                     save_sampled_config[cur_idx][num_tries[cur_idx] - 1])
-                else:
-                    act_args, saved_world, sampled_config = self._sample_action_args(env, state, skel_act,
-                                                                                     constr_set, rng, self._init_saved_world,
-                                                                                     save_sampled_config[cur_idx][num_tries[cur_idx] - 1])
-                if not save_sampled_config[cur_idx][num_tries[cur_idx] - 1]:
-                    save_sampled_config[cur_idx][num_tries[cur_idx] - 1] = sampled_config
-                self._count_motion_prob_solving += 1
-                save_data.add_init(sym_actions=skel_act.predicate.__str__(), configs=sampled_config, steps=cur_idx)
-                num_sample_tries += 1
-                if act_args: # Motion level is feasible
-                    saved_worlds[cur_idx] = saved_world
-                    ground_act = skel_act.predicate(*act_args)
-                    plan[cur_idx] = ground_act
-                    try:
-                        traj[cur_idx+1], _, _, save_data = env.simulate(state, ground_act, save_data)
-                        self._obj_state_traj.append([traj[cur_idx+1][env._objs[i]]['pose'] for i in range(len(env._objs))])
-                    except EnvironmentFailure as e:
-                        print(f'WARNING: env failure in planning: {e.args[0]}')
-                        traj[cur_idx+1] = state
-                        save_data.add_rest(base_states=None, arm_states=None, obj_states=None, obj_ids=None,
-                                           hand_hold=None, feasibilities=False)
-                    cur_idx += 1
-                    # Check literal sequence constraint. Backtrack if failed.
-                    assert len(traj) == len(lits_sequence)
-                    lits = env.parse_state(traj[cur_idx])
-                    if lits == lits_sequence[cur_idx]:
-                        if cur_idx == len(skeleton):  # success!
-                            print(f'Total number of motion planning tries: {num_sample_tries}')
-                            return plan, save_data
-                        continue  # all good, no need to backtrack
-                    cur_idx -= 1
-                else:
+        save_sampled_config = [[None for _ in range(self._num_samples_per_step)] for _ in range(len(skeleton))]
+        assert len(skeleton) == len(constraints)
+        num_sample_tries = 0
+        cur_idx = 0
+        num_tries = [0 for _ in skeleton]
+        saved_worlds = [None for _ in skeleton]
+        idx_to_max_num_tries = [self._num_samples_per_step \
+            if any(v.is_continuous for v in a.variables) \
+            else 1 for a in skeleton]
+        plan = [None for _ in skeleton]
+        traj = [start_state]+[None for _ in skeleton]
+        while cur_idx < len(skeleton):
+            if time.time()-start_time > self._timeout:
+                raise PlanningTimeout("Timed out!")
+            assert num_tries[cur_idx] < idx_to_max_num_tries[cur_idx]
+            print("Planner at {} step: num trials {}".format(cur_idx, num_tries))
+            # Good debug point #2: if you have a skeleton that you think is
+            # reasonable, but sampling isn't working, print num_tries here to
+            # see at what step the backtracking search is getting stuck.
+            num_tries[cur_idx] += 1
+            state = traj[cur_idx]
+            skel_act = skeleton[cur_idx]
+            constr_set = constraints[cur_idx]
+            if cur_idx > 0:
+                act_args, saved_world, sampled_config = self._sample_action_args(env, state, skel_act,
+                                                                                 constr_set, rng, saved_worlds[cur_idx - 1],
+                                                                                 save_sampled_config[cur_idx][num_tries[cur_idx] - 1])
+            else:
+                act_args, saved_world, sampled_config = self._sample_action_args(env, state, skel_act,
+                                                                                 constr_set, rng, self._init_saved_world,
+                                                                                 save_sampled_config[cur_idx][num_tries[cur_idx] - 1])
+            if not save_sampled_config[cur_idx][num_tries[cur_idx] - 1]:
+                save_sampled_config[cur_idx][num_tries[cur_idx] - 1] = sampled_config
+            self._count_motion_prob_solving += 1
+            save_data.add_init(sym_actions=skel_act.predicate.__str__(), configs=sampled_config, steps=cur_idx)
+            num_sample_tries += 1
+            if act_args: # Motion level is feasible
+                saved_worlds[cur_idx] = saved_world
+                ground_act = skel_act.predicate(*act_args)
+                plan[cur_idx] = ground_act
+                try:
+                    traj[cur_idx+1], _, _, save_data = env.simulate(state, ground_act, save_data)
+                    self._obj_state_traj.append([traj[cur_idx+1][env._objs[i]]['pose'] for i in range(len(env._objs))])
+                except EnvironmentFailure as e:
+                    print(f'WARNING: env failure in planning: {e.args[0]}')
+                    traj[cur_idx+1] = state
                     save_data.add_rest(base_states=None, arm_states=None, obj_states=None, obj_ids=None,
                                        hand_hold=None, feasibilities=False)
+                cur_idx += 1
+                # Check literal sequence constraint. Backtrack if failed.
+                assert len(traj) == len(lits_sequence)
+                lits = env.parse_state(traj[cur_idx])
+                if lits == lits_sequence[cur_idx]:
+                    if cur_idx == len(skeleton):  # success!
+                        print(f'Total number of motion planning tries: {num_sample_tries}')
+                        return plan, save_data
+                    continue  # all good, no need to backtrack
+                cur_idx -= 1
+            else:
+                save_data.add_rest(base_states=None, arm_states=None, obj_states=None, obj_ids=None,
+                                   hand_hold=None, feasibilities=False)
 
-                # Do backjumping
-                while num_tries[cur_idx] == idx_to_max_num_tries[cur_idx]:
-                    backjump_idx = 0
-                    if cur_idx > 0:
-                        if self._learner_name == 'plan_feasibility':
-                            state_graphs = [get_state_graph(obj_state_t, self._init_obj_state).to(self._device) for obj_state_t in self._obj_state_traj]
-                            obj_infos = [torch.tensor(np.array([BOX_SIZE] * (num_remaining_obj + 1)), dtype=torch.float32, device=self._device)
-                                         for num_remaining_obj in reversed(range(cur_idx))]
-                            state_graphs = Batch.from_data_list(state_graphs)
-                            backjump_idx = self._inference.backjump([state_graphs], [obj_infos])
-                        elif self._learner_name == 'imitation':
-                            state_graphs = [get_state_graph(obj_state_t, self._init_obj_state).to(self._device) for
-                                            obj_state_t in self._obj_state_traj]
-                            obj_infos = torch.tensor(np.array(BOX_SIZE), dtype=torch.float32, device=self._device)
-                            obj_infos = obj_infos.unsqueeze(dim=0)
-                            state_graphs = Batch.from_data_list(state_graphs)
-                            backjump_idx = self._inference.backjump([state_graphs], obj_infos)[0]
+            # Do backjumping
+            while num_tries[cur_idx] == idx_to_max_num_tries[cur_idx]:
+                backjump_idx = 0
+                if cur_idx > 0:
+                    if self._learner_name == 'plan_feasibility':
+                        state_graphs = [get_state_graph(obj_state_t, self._init_obj_state).to(self._device) for obj_state_t in self._obj_state_traj]
+                        obj_infos = [torch.tensor(np.array([BOX_SIZE] * (num_remaining_obj + 1)), dtype=torch.float32, device=self._device)
+                                     for num_remaining_obj in reversed(range(cur_idx))]
+                        state_graphs = Batch.from_data_list(state_graphs)
+                        backjump_idx = self._inference.backjump([state_graphs], [obj_infos])
+                    elif self._learner_name == 'imitation':
+                        state_graphs = [get_state_graph(obj_state_t, self._init_obj_state).to(self._device) for
+                                        obj_state_t in self._obj_state_traj]
+                        obj_infos = torch.tensor(np.array(BOX_SIZE), dtype=torch.float32, device=self._device)
+                        obj_infos = obj_infos.unsqueeze(dim=0)
+                        state_graphs = Batch.from_data_list(state_graphs)
+                        backjump_idx = self._inference.backjump([state_graphs], obj_infos)[0]
 
-                    for idx in range(backjump_idx + 1, cur_idx + 1):
-                        num_tries[idx] = 0
-                        traj[idx] = None
-                        self._obj_state_traj.pop()
-                        if idx > 0:
-                            saved_worlds[idx - 1] = None
-                            plan[idx - 1] = None
-                            env.save_path.delete()
-                    if cur_idx == 0:
-                        if nr == self._num_resamples - 1:
-                            return None, save_data  # backtracking exhausted
-                    cur_idx = backjump_idx
-            # Should only get here if the skeleton was empty
-            assert not skeleton
-            print(f'Total number of motion planning tries: {num_sample_tries}')
-            return plan, save_data
+                for idx in range(backjump_idx + 1, cur_idx + 1):
+                    num_tries[idx] = 0
+                    traj[idx] = None
+                    self._obj_state_traj.pop()
+                    if idx > 0:
+                        saved_worlds[idx - 1] = None
+                        plan[idx - 1] = None
+                        env.save_path.delete()
+                if cur_idx == 0:
+                    return None, save_data  # backtracking exhausted
+                cur_idx = backjump_idx
+        # Should only get here if the skeleton was empty
+        assert not skeleton
+        print(f'Total number of motion planning tries: {num_sample_tries}')
+        return plan, save_data
 
     @staticmethod
     def _sample_action_args(env, state, skel_act, constr_set, rng, pre_saved_world, save_sampled_config):
