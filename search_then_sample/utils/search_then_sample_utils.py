@@ -868,6 +868,17 @@ class SaveData(object):
         self._feasibilities.append(feasibilities)
         self._steps.append(steps)
 
+    def reinit(self):
+        self._sym_actions = self._sym_actions[:1]
+        self._base_states = self._base_states[:1]
+        self._arm_states = self._arm_states[:1]
+        self._obj_states = self._obj_states[:1]
+        self._obj_ids = self._obj_ids[:1]
+        self._configs = self._configs[:1]
+        self._hand_hold = self._hand_hold[:1]
+        self._feasibilities = self._feasibilities[:1]
+        self._steps = self._steps[:1]
+
     def add_init(self, sym_actions, configs, steps):
         self._sym_actions.append(sym_actions)
         self._configs.append(configs)
