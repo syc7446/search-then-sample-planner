@@ -829,8 +829,8 @@ def store_data(data, opt):
     if opt.env_name == "namo":
         env_info = opt.env_name
     else:
-        env_info = "{}_obj".format("rand" if opt.generalization else opt.num_objs)
-    dbfile = open(path + '/data_{}_seed_{}'.format(env_info, opt.seed), 'ab')
+        env_info = "pack_{}_obj".format("rand" if opt.generalization else opt.num_objs)
+    dbfile = open(path + '/data_{}_sample_{}_seed_{}'.format(env_info, opt.num_samples_per_step, opt.seed), 'ab')
     pickle.dump(db, dbfile)
     dbfile.close()
 
