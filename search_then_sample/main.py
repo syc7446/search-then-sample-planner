@@ -124,11 +124,14 @@ for i, num_obj in enumerate(num_objs):
     print('finished in {:.5f} seconds'.format(time.time() - start_time))
 
     if plan:
-        if not os.path.exists('result'): os.makedirs('result')
-        if opt.planner_name in ['backjump_newsample', 'backjump_resample']:
-            result_fname = opt.planner_name + '_' + opt.learner_path.split('/')[-1] + '.txt'
+        if not os.path.exists('result'):
+            os.makedirs('result')
+
+        if 'backjump' in opt.planner_name:
+            result_fname = planner_name + '_' + opt.learner_path.split('/')[-1] + '.txt'
         else:
-            result_fname = opt.planner_name + '.txt'
+            result_fname = planner_name + '.txt'
+
         if opt.generalization:
             result_fname = 'generalization_' + result_fname
         result_fname = opt.env_name + '_' + result_fname
