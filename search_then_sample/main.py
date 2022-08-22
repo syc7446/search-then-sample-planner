@@ -21,6 +21,7 @@ from search_then_sample.planner.backtrack_batch_sampling_planner import Backtrac
 from search_then_sample.planner.backjump_forgetting_planner import BackjumpForgettingPlanner
 from search_then_sample.planner.backjump_batch_sampling_planner import BackjumpBatchSamplingPlanner
 from search_then_sample.planner.fixed_backjump_forgetting_planner import FixedBackjumpForgettingPlanner
+from search_then_sample.planner.backjump_to_root_forgetting_planner import BackjumpToRootForgettingPlanner
 import search_then_sample.utils.ground_truth_ndrs as ground_truth_ndrs
 import search_then_sample.utils.constants as constants
 from search_then_sample.utils.search_then_sample_utils import SaveData, store_path, store_data
@@ -114,6 +115,10 @@ for i, num_obj in enumerate(num_objs):
                                                  heuristic_name="PyperplanHAddHeuristic",
                                                  num_samples_per_step=opt.num_samples_per_step,
                                                  fixed_step=opt.fixed_step)
+    elif opt.planner_name == 'backjump_to_root_forgetting':
+        planner = BackjumpToRootForgettingPlanner(seed=opt.seed, timeout=constants.PLANNER_TIMEOUT,
+                                                  heuristic_name="PyperplanHAddHeuristic",
+                                                  num_samples_per_step=opt.num_samples_per_step)
 
     all_ndrs = ground_truth_ndrs.get_groundtruth_ndrs(opt.env_name, env)
 
