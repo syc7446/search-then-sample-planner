@@ -180,6 +180,7 @@ class FixedBackjumpForgettingPlanner:
                 cur_idx -= 1
                 if cur_idx < 0:
                     return None, save_data  # backtracking exhausted
+                cur_idx += 1
                 if backjump_idx < 0: backjump_idx = 0
                 for idx in range(backjump_idx + 1, cur_idx + 1):
                     num_tries[idx] = 0
