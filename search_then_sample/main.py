@@ -128,9 +128,9 @@ for i, num_obj in enumerate(num_objs):
             os.makedirs('result')
 
         if 'backjump' in opt.planner_name:
-            result_fname = planner_name + '_' + opt.learner_path.split('/')[-1] + '.txt'
+            result_fname = opt.planner_name + '_' + opt.learner_path.split('/')[-1] + '.txt'
         else:
-            result_fname = planner_name + '.txt'
+            result_fname = opt.planner_name + '.txt'
 
         if opt.generalization:
             result_fname = 'generalization_' + result_fname
