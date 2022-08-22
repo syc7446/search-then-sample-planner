@@ -20,6 +20,7 @@ from search_then_sample.planner.backtrack_forgetting_planner import BacktrackFor
 from search_then_sample.planner.backtrack_batch_sampling_planner import BacktrackBatchSamplingPlanner
 from search_then_sample.planner.backjump_forgetting_planner import BackjumpForgettingPlanner
 from search_then_sample.planner.backjump_batch_sampling_planner import BackjumpBatchSamplingPlanner
+from search_then_sample.planner.fixed_backjump_forgetting_planner import FixedBackjumpForgettingPlanner
 import search_then_sample.utils.ground_truth_ndrs as ground_truth_ndrs
 import search_then_sample.utils.constants as constants
 from search_then_sample.utils.search_then_sample_utils import SaveData, store_path, store_data
@@ -53,6 +54,7 @@ parser.add_argument('--generalization', action='store_true')
 parser.add_argument('--use_gui', action='store_true')
 parser.add_argument('--save_merged_path', action='store_true', help='save merged path to visualize')
 parser.add_argument('--save_data', action='store_true', help='save backtracking data')
+parser.add_argument('--fixed_step', type=int, default=2)
 
 opt = parser.parse_args()
 print(opt)
@@ -107,6 +109,11 @@ for i, num_obj in enumerate(num_objs):
                                                learner_name=opt.learner_name,
                                                learner_path=opt.learner_path,
                                                cuda_id=opt.cuda_id)
+    elif opt.planner_name == 'fixed_backjump_forgetting':
+        planner = FixedBackjumpForgettingPlanner(seed=opt.seed, timeout=constants.PLANNER_TIMEOUT,
+                                                 heuristic_name="PyperplanHAddHeuristic",
+                                                 num_samples_per_step=opt.num_samples_per_step,
+                                                 fixed_step=opt.fixed_step)
 
     all_ndrs = ground_truth_ndrs.get_groundtruth_ndrs(opt.env_name, env)
 
